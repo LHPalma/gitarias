@@ -68,12 +68,19 @@ func describeCheckout(entry worktree.Worktree) string {
 func describeState(entry worktree.Worktree) string {
 	var states []string
 	if entry.Locked {
-		states = append(states, "trancado")
+		states = append(states, withReason("trancado", entry.LockedReason))
 	}
 	if entry.Prunable {
-		states = append(states, "podável")
+		states = append(states, withReason("podável", entry.PrunableReason))
 	}
 	return strings.Join(states, ", ")
+}
+
+func withReason(state string, reason string) string {
+	if reason == "" {
+		return state
+	}
+	return state + ": " + reason
 }
 
 func shortHead(head string) string {

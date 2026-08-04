@@ -6,7 +6,12 @@ type Worktree struct {
 	Branch   string
 	Detached bool
 	Bare     bool
-	Locked   bool
-	Prunable bool
-	Current  bool
+
+	Locked       bool
+	LockedReason string
+
+	Prunable       bool
+	PrunableReason string
+
+	Current bool
 }
