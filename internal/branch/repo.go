@@ -4,21 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/LHPalma/gitarias/internal/git"
 )
 
 type Repo struct {
-	git Runner
+	runner git.Runner
 }
 
-func NewRepo(runner Runner) *Repo {
-	return &Repo{git: runner}
+func NewRepo(runner git.Runner) *Repo {
+	return &Repo{runner: runner}
 }
 
 func (repo *Repo) Ensure() error {
-	if _, err := repo.git.Run("rev-parse", "--is-inside-work-tree"); err != nil {
-		return errors.New("isso não é um repositório git")
-	}
-	return nil
+	return git.EnsureRepo(repo.runner)
 }
 
 func (repo *Repo) ResolveBase(requested string) (Base, error) {
@@ -29,7 +28,7 @@ func (repo *Repo) ResolveBase(requested string) (Base, error) {
 		return Base{Name: requested, Source: BaseFromFlag}, nil
 	}
 
-	if originHead, err := repo.git.Run("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
+	if originHead, err := repo.runner.Run("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
 		detected := strings.TrimPrefix(originHead, "origin/")
 		if detected != "" && repo.localExists(detected) {
 			return Base{Name: detected, Source: BaseFromOriginHead}, nil
@@ -46,12 +45,12 @@ func (repo *Repo) ResolveBase(requested string) (Base, error) {
 }
 
 func (repo *Repo) localExists(name string) bool {
-	_, err := repo.git.Run("rev-parse", "--verify", "--quiet", "refs/heads/"+name)
+	_, err := repo.runner.Run("rev-parse", "--verify", "--quiet", "refs/heads/"+name)
 	return err == nil
 }
 
 func (repo *Repo) Merged(base Base) ([]Branch, error) {
-	output, err := repo.git.Run("for-each-ref", "refs/heads/", "--merged", base.Name, "--format=%(refname:short)")
+	output, err := repo.runner.Run("for-each-ref", "refs/heads/", "--merged", base.Name, "--format=%(refname:short)")
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +60,7 @@ func (repo *Repo) Merged(base Base) ([]Branch, error) {
 		"main":    true,
 		"master":  true,
 	}
-	if currentBranch, err := repo.git.Run("branch", "--show-current"); err == nil && currentBranch != "" {
+	if currentBranch, err := repo.runner.Run("branch", "--show-current"); err == nil && currentBranch != "" {
 		protected[currentBranch] = true
 	}
 
@@ -81,7 +80,7 @@ func (repo *Repo) Delete(branches []Branch) []DeleteResult {
 	results := make([]DeleteResult, 0, len(branches))
 
 	for _, target := range branches {
-		_, err := repo.git.Run("branch", "-d", target.Name)
+		_, err := repo.runner.Run("branch", "-d", target.Name)
 		results = append(results, DeleteResult{Branch: target, Err: err})
 	}
 

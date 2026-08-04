@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/LHPalma/gitarias/internal/branch"
+	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +32,7 @@ func init() {
 }
 
 func runBranches(cmd *cobra.Command, args []string) error {
-	repo := branch.NewRepo(branch.CommandRunner{})
+	repo := branch.NewRepo(git.CommandRunner{})
 
 	if err := repo.Ensure(); err != nil {
 		return err
