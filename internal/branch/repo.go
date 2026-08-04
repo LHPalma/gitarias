@@ -76,3 +76,14 @@ func (repo *Repo) Merged(base Base) ([]Branch, error) {
 
 	return merged, nil
 }
+
+func (repo *Repo) Delete(branches []Branch) []DeleteResult {
+	results := make([]DeleteResult, 0, len(branches))
+
+	for _, target := range branches {
+		_, err := repo.git.Run("branch", "-d", target.Name)
+		results = append(results, DeleteResult{Branch: target, Err: err})
+	}
+
+	return results
+}

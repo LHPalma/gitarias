@@ -12,8 +12,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var gitRunner branch.Runner = branch.CommandRunner{}
-
 var (
 	branchesClean bool
 	branchesBase  string
@@ -33,7 +31,7 @@ func init() {
 }
 
 func runBranches(cmd *cobra.Command, args []string) error {
-	repo := branch.NewRepo(gitRunner)
+	repo := branch.NewRepo(branch.CommandRunner{})
 
 	if err := repo.Ensure(); err != nil {
 		return err
@@ -76,7 +74,7 @@ func runBranches(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return deleteBranches(merged)
+	return report(repo.Delete(merged))
 }
 
 func describeSource(source branch.BaseSource) string {
@@ -106,16 +104,16 @@ func confirm(prompt string) (bool, error) {
 	}
 }
 
-func deleteBranches(branches []branch.Branch) error {
+func report(results []branch.DeleteResult) error {
 	var failed int
 
-	for _, target := range branches {
-		if _, err := gitRunner.Run("branch", "-d", target.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "  x %s: %v\n", target.Name, err)
+	for _, result := range results {
+		if result.Err != nil {
+			fmt.Fprintf(os.Stderr, "  x %s: %v\n", result.Branch.Name, result.Err)
 			failed++
 			continue
 		}
-		fmt.Printf("  - %s deletada\n", target.Name)
+		fmt.Printf("  - %s deletada\n", result.Branch.Name)
 	}
 
 	if failed > 0 {
