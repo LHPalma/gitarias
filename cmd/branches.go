@@ -33,21 +33,23 @@ func init() {
 }
 
 func runBranches(cmd *cobra.Command, args []string) error {
-	if err := ensureRepo(); err != nil {
+	repo := branch.NewRepo(gitRunner)
+
+	if err := repo.Ensure(); err != nil {
 		return err
 	}
 
-	base, source, err := resolveBase()
+	base, err := repo.ResolveBase(branchesBase)
 	if err != nil {
 		return err
 	}
 
-	merged, err := mergedBranches(base)
+	merged, err := repo.Merged(base)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Base: %s (%s)\n\n", base, source)
+	fmt.Printf("Base: %s (%s)\n\n", base.Name, describeSource(base.Source))
 
 	if len(merged) == 0 {
 		fmt.Println("Nenhuma branch local mergeada para limpar.")
@@ -55,8 +57,8 @@ func runBranches(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Branches locais já mergeadas (%d):\n", len(merged))
-	for _, b := range merged {
-		fmt.Println("  " + b)
+	for _, mergedBranch := range merged {
+		fmt.Println("  " + mergedBranch.Name)
 	}
 	fmt.Println()
 
@@ -65,11 +67,11 @@ func runBranches(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	ok, err := confirm(fmt.Sprintf("Deletar %d branch(es)? [y/N] ", len(merged)))
+	confirmed, err := confirm(fmt.Sprintf("Deletar %d branch(es)? [y/N] ", len(merged)))
 	if err != nil {
 		return err
 	}
-	if !ok {
+	if !confirmed {
 		fmt.Println("Cancelado, nada foi deletado.")
 		return nil
 	}
@@ -77,67 +79,15 @@ func runBranches(cmd *cobra.Command, args []string) error {
 	return deleteBranches(merged)
 }
 
-func ensureRepo() error {
-	if _, err := gitRunner.Run("rev-parse", "--is-inside-work-tree"); err != nil {
-		return errors.New("isso não é um repositório git")
+func describeSource(source branch.BaseSource) string {
+	switch source {
+	case branch.BaseFromFlag:
+		return "informada via --base"
+	case branch.BaseFromOriginHead:
+		return "detectada via origin/HEAD"
+	default:
+		return "encontrada localmente"
 	}
-	return nil
-}
-
-func resolveBase() (string, string, error) {
-	if branchesBase != "" {
-		if !localBranchExists(branchesBase) {
-			return "", "", fmt.Errorf("a branch base %q não existe neste repositório", branchesBase)
-		}
-		return branchesBase, "informada via --base", nil
-	}
-
-	if ref, err := gitRunner.Run("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
-		name := strings.TrimPrefix(ref, "origin/")
-		if name != "" && localBranchExists(name) {
-			return name, "detectada via origin/HEAD", nil
-		}
-	}
-
-	for _, name := range []string{"main", "master"} {
-		if localBranchExists(name) {
-			return name, "encontrada localmente", nil
-		}
-	}
-
-	return "", "", errors.New("não consegui determinar a branch base: nem main nem master existem aqui. Use --base <branch>")
-}
-
-func localBranchExists(name string) bool {
-	_, err := gitRunner.Run("rev-parse", "--verify", "--quiet", "refs/heads/"+name)
-	return err == nil
-}
-
-func mergedBranches(base string) ([]string, error) {
-	out, err := gitRunner.Run("for-each-ref", "refs/heads/", "--merged", base, "--format=%(refname:short)")
-	if err != nil {
-		return nil, err
-	}
-
-	protected := map[string]bool{
-		base:     true,
-		"main":   true,
-		"master": true,
-	}
-	if current, err := gitRunner.Run("branch", "--show-current"); err == nil && current != "" {
-		protected[current] = true
-	}
-
-	var merged []string
-	for _, line := range strings.Split(out, "\n") {
-		name := strings.TrimSpace(line)
-		if name == "" || protected[name] {
-			continue
-		}
-		merged = append(merged, name)
-	}
-
-	return merged, nil
 }
 
 func confirm(prompt string) (bool, error) {
@@ -156,16 +106,16 @@ func confirm(prompt string) (bool, error) {
 	}
 }
 
-func deleteBranches(names []string) error {
+func deleteBranches(branches []branch.Branch) error {
 	var failed int
 
-	for _, name := range names {
-		if _, err := gitRunner.Run("branch", "-d", name); err != nil {
-			fmt.Fprintf(os.Stderr, "  x %s: %v\n", name, err)
+	for _, target := range branches {
+		if _, err := gitRunner.Run("branch", "-d", target.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "  x %s: %v\n", target.Name, err)
 			failed++
 			continue
 		}
-		fmt.Printf("  - %s deletada\n", name)
+		fmt.Printf("  - %s deletada\n", target.Name)
 	}
 
 	if failed > 0 {
