@@ -8,8 +8,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/LHPalma/gitarias/internal/branch"
 	"github.com/spf13/cobra"
 )
+
+var gitRunner branch.Runner = branch.CommandRunner{}
 
 var (
 	branchesClean bool
@@ -75,7 +78,7 @@ func runBranches(cmd *cobra.Command, args []string) error {
 }
 
 func ensureRepo() error {
-	if _, err := git("rev-parse", "--is-inside-work-tree"); err != nil {
+	if _, err := gitRunner.Run("rev-parse", "--is-inside-work-tree"); err != nil {
 		return errors.New("isso não é um repositório git")
 	}
 	return nil
@@ -89,7 +92,7 @@ func resolveBase() (string, string, error) {
 		return branchesBase, "informada via --base", nil
 	}
 
-	if ref, err := git("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
+	if ref, err := gitRunner.Run("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
 		name := strings.TrimPrefix(ref, "origin/")
 		if name != "" && localBranchExists(name) {
 			return name, "detectada via origin/HEAD", nil
@@ -106,12 +109,12 @@ func resolveBase() (string, string, error) {
 }
 
 func localBranchExists(name string) bool {
-	_, err := git("rev-parse", "--verify", "--quiet", "refs/heads/"+name)
+	_, err := gitRunner.Run("rev-parse", "--verify", "--quiet", "refs/heads/"+name)
 	return err == nil
 }
 
 func mergedBranches(base string) ([]string, error) {
-	out, err := git("for-each-ref", "refs/heads/", "--merged", base, "--format=%(refname:short)")
+	out, err := gitRunner.Run("for-each-ref", "refs/heads/", "--merged", base, "--format=%(refname:short)")
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +124,7 @@ func mergedBranches(base string) ([]string, error) {
 		"main":   true,
 		"master": true,
 	}
-	if current, err := git("branch", "--show-current"); err == nil && current != "" {
+	if current, err := gitRunner.Run("branch", "--show-current"); err == nil && current != "" {
 		protected[current] = true
 	}
 
@@ -157,7 +160,7 @@ func deleteBranches(names []string) error {
 	var failed int
 
 	for _, name := range names {
-		if _, err := git("branch", "-d", name); err != nil {
+		if _, err := gitRunner.Run("branch", "-d", name); err != nil {
 			fmt.Fprintf(os.Stderr, "  x %s: %v\n", name, err)
 			failed++
 			continue
