@@ -10,6 +10,8 @@ updates:
       timezone: America/Sao_Paulo
     commit-message:
       prefix: build
+    allow:
+      - dependency-type: all
 
   - package-ecosystem: github-actions
     directory: /
