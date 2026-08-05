@@ -1,5 +1,6 @@
 package branch
 
 type Branch struct {
-	Name string
+	Name  string
+	Merge MergeKind
 }

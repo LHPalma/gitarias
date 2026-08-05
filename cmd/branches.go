@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/LHPalma/gitarias/internal/branch"
 	"github.com/LHPalma/gitarias/internal/git"
@@ -56,8 +57,12 @@ func runBranches(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Branches locais já mergeadas (%d):\n", len(merged))
+	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, mergedBranch := range merged {
-		fmt.Println("  " + mergedBranch.Name)
+		fmt.Fprintf(writer, "  %s\t%s\n", mergedBranch.Name, describeMerge(mergedBranch.Merge))
+	}
+	if err := writer.Flush(); err != nil {
+		return err
 	}
 	fmt.Println()
 
@@ -76,6 +81,17 @@ func runBranches(cmd *cobra.Command, args []string) error {
 	}
 
 	return report(repo.Delete(merged))
+}
+
+func describeMerge(kind branch.MergeKind) string {
+	switch kind {
+	case branch.MergedBySquash:
+		return "squashada"
+	case branch.MergedByRebase:
+		return "rebaseada"
+	default:
+		return "mergeada"
+	}
 }
 
 func describeSource(source branch.BaseSource) string {
