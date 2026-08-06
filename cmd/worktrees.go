@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -23,6 +22,7 @@ func init() {
 }
 
 func runWorktrees(cmd *cobra.Command, args []string) error {
+	output := cmd.OutOrStdout()
 	repo := worktree.NewRepo(git.CommandRunner{})
 
 	if err := repo.Ensure(); err != nil {
@@ -34,9 +34,9 @@ func runWorktrees(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Working trees (%d):\n", len(worktrees))
+	fmt.Fprintf(output, "Working trees (%d):\n", len(worktrees))
 
-	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	writer := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
 	for _, entry := range worktrees {
 		marker := " "
 		if entry.Current {

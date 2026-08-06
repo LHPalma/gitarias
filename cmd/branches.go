@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -35,6 +34,7 @@ func init() {
 }
 
 func runBranches(cmd *cobra.Command, args []string) error {
+	output, errorOutput := cmd.OutOrStdout(), cmd.ErrOrStderr()
 	repo := branch.NewRepo(git.CommandRunner{})
 
 	if err := repo.Ensure(); err != nil {
@@ -51,25 +51,25 @@ func runBranches(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Base: %s (%s)\n\n", base.Name, describeSource(base.Source))
+	fmt.Fprintf(output, "Base: %s (%s)\n\n", base.Name, describeSource(base.Source))
 
 	if len(merged) == 0 {
-		fmt.Println("Nenhuma branch local mergeada para limpar.")
+		fmt.Fprintln(output, "Nenhuma branch local mergeada para limpar.")
 		return nil
 	}
 
-	fmt.Printf("Branches locais já mergeadas (%d):\n", len(merged))
-	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(output, "Branches locais já mergeadas (%d):\n", len(merged))
+	writer := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
 	for _, mergedBranch := range merged {
 		fmt.Fprintf(writer, "  %s\t%s\n", mergedBranch.Name, describeMerge(mergedBranch.Merge))
 	}
 	if err := writer.Flush(); err != nil {
 		return err
 	}
-	fmt.Println()
+	fmt.Fprintln(output)
 
 	if !branchesClean {
-		fmt.Println("Use --clean para deletar.")
+		fmt.Fprintln(output, "Use --clean para deletar.")
 		return nil
 	}
 
@@ -77,25 +77,25 @@ func runBranches(cmd *cobra.Command, args []string) error {
 	if !branchesForce {
 		candidates = ancestryOnly(merged)
 		if held := len(merged) - len(candidates); held > 0 {
-			fmt.Printf("%d branch(es) ficam de fora: o git recusa apagá-las com -d. Use --force para forçar.\n", held)
+			fmt.Fprintf(output, "%d branch(es) ficam de fora: o git recusa apagá-las com -d. Use --force para forçar.\n", held)
 		}
 	}
 
 	if len(candidates) == 0 {
-		fmt.Println("Nenhuma branch pode ser deletada sem --force.")
+		fmt.Fprintln(output, "Nenhuma branch pode ser deletada sem --force.")
 		return nil
 	}
 
-	confirmed, err := confirm(fmt.Sprintf("Deletar %d branch(es)? [y/N] ", len(candidates)))
+	confirmed, err := confirm(cmd.InOrStdin(), output, fmt.Sprintf("Deletar %d branch(es)? [y/N] ", len(candidates)))
 	if err != nil {
 		return err
 	}
 	if !confirmed {
-		fmt.Println("Cancelado, nada foi deletado.")
+		fmt.Fprintln(output, "Cancelado, nada foi deletado.")
 		return nil
 	}
 
-	return report(repo.Delete(candidates, branchesForce))
+	return report(output, errorOutput, repo.Delete(candidates, branchesForce))
 }
 
 func ancestryOnly(branches []branch.Branch) []branch.Branch {
@@ -132,10 +132,10 @@ func describeSource(source branch.BaseSource) string {
 	}
 }
 
-func confirm(prompt string) (bool, error) {
-	fmt.Print(prompt)
+func confirm(input io.Reader, output io.Writer, prompt string) (bool, error) {
+	fmt.Fprint(output, prompt)
 
-	answer, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	answer, err := bufio.NewReader(input).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return false, err
 	}
@@ -148,16 +148,16 @@ func confirm(prompt string) (bool, error) {
 	}
 }
 
-func report(results []branch.DeleteResult) error {
+func report(output io.Writer, errorOutput io.Writer, results []branch.DeleteResult) error {
 	var failed int
 
 	for _, result := range results {
 		if result.Err != nil {
-			fmt.Fprintf(os.Stderr, "  x %s: %v\n", result.Branch.Name, result.Err)
+			fmt.Fprintf(errorOutput, "  x %s: %v\n", result.Branch.Name, result.Err)
 			failed++
 			continue
 		}
-		fmt.Printf("  - %s deletada\n", result.Branch.Name)
+		fmt.Fprintf(output, "  - %s deletada\n", result.Branch.Name)
 	}
 
 	if failed > 0 {
