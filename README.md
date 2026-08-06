@@ -25,16 +25,17 @@ Em macOS e Windows o problema não existe, mas a variável não atrapalha.
 
 ### `gtr branches`
 
-Lista as branches locais cujo trabalho já está contido na branch base.
+Lista as branches locais cujo trabalho já está contido na branch base, dizendo
+como cada uma chegou lá.
 
 ```
 $ gtr branches
 Base: main (encontrada localmente)
 
 Branches locais já mergeadas (3):
-  feat-export
-  feat-login
-  fix-typo
+  fix-typo     mergeada
+  feat-export  rebaseada
+  feat-login   squashada
 
 Use --clean para deletar.
 ```
@@ -43,23 +44,44 @@ Use --clean para deletar.
 |---|---|---|
 | `--clean` | `false` | Deleta as branches listadas, após confirmação |
 | `--base <branch>` | vazio | Define a base; vazio aciona a detecção automática |
+| `--force` | `false` | Com `--clean`, força a deleção das squashadas e rebaseadas |
 
 Com `--clean`, nada é apagado sem resposta afirmativa. São aceitos `y`, `yes`,
 `s` e `sim`, em qualquer caixa — **qualquer outra entrada, inclusive Enter
 vazio, cancela**.
+
+**Por que existem três rótulos.** Quando um PR é mergeado por squash ou por
+rebase, o commit de ponta da branch não vira ancestral da base: o merge cria
+commits novos, com o mesmo conteúdo e paternidade diferente. Para o git a
+branch continua "não mergeada", e é por isso que ela nunca some da sua lista
+por mais que você limpe. O `gtr` compara o *conteúdo* — se o trabalho da branch
+já está na base, ele diz por qual caminho.
+
+Numa branch de um commit só, squash e rebase produzem exatamente o mesmo
+resultado e não há como distinguir; nesse caso o rótulo é `squashada`.
+
+**O `--clean` sozinho não apaga essas duas.** O `git branch -d` se recusa a
+apagar branch que não seja ancestral da base, e o `gtr` não contorna isso pelas
+suas costas:
 
 ```
 $ gtr branches --clean
 Base: main (encontrada localmente)
 
 Branches locais já mergeadas (3):
-  feat-export
-  feat-login
-  fix-typo
+  fix-typo     mergeada
+  feat-export  rebaseada
+  feat-login   squashada
 
-Deletar 3 branch(es)? [y/N] n
+2 branch(es) ficam de fora: o git recusa apagá-las com -d. Use --force para forçar.
+Deletar 1 branch(es)? [y/N] n
 Cancelado, nada foi deletado.
 ```
+
+Com `--force` as três entram, e só então o `-D` é usado — exclusivamente nas
+squashadas e rebaseadas, nunca nas demais. O que a flag libera é estreito: ela
+autoriza o `gtr` a confiar na própria comparação de conteúdo quando o git se
+recusa por ancestralidade, e nada além disso.
 
 **Como a base é escolhida**, parando no primeiro que funcionar:
 
@@ -91,9 +113,11 @@ houver uma. O comando não tem flags.
 
 Estas não são configurações — são propriedades do código:
 
-- **Nunca apaga branch não mergeada.** A deleção usa `git branch -d`, nunca
-  `-D`. Se o filtro da aplicação tiver um bug, o próprio git barra a operação.
-  O `-D` não está exposto nem atrás de flag.
+- **Nunca apaga branch cujo trabalho não esteja na base.** A deleção usa
+  `git branch -d`, e o `-D` só aparece com `--force`, aplicado apenas às
+  branches que a comparação de conteúdo provou já integradas. Branch com
+  trabalho pendente não é listada, e o que não é listado não é apagado nem
+  com `--force`.
 - **Nunca toca em branch remota.** A consulta é restrita a `refs/heads/` e não
   existe caminho de código que chame `git push --delete`. Branch apagada
   localmente continua íntegra no servidor.
@@ -126,7 +150,7 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 ## Estado
 
 Os comandos `branches` e `worktrees` estão no ar. Planejados: seleção
-interativa de quais branches apagar, `stats`, `changelog`, `gtr ignored`,
+interativa de quais branches apagar, `stats`, `changelog`, `gtr ignore`,
 saída em CSV/JSON e arquivo de configuração opcional.
 
 ## Contribuindo
