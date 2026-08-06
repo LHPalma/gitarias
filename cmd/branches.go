@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/LHPalma/gitarias/internal/branch"
 	"github.com/LHPalma/gitarias/internal/git"
@@ -58,15 +57,9 @@ func runBranches(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Fprintf(output, "Branches locais já mergeadas (%d):\n", len(merged))
-	writer := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
-	for _, mergedBranch := range merged {
-		fmt.Fprintf(writer, "  %s\t%s\n", mergedBranch.Name, describeMerge(mergedBranch.Merge))
-	}
-	if err := writer.Flush(); err != nil {
+	if err := printMerged(output, merged); err != nil {
 		return err
 	}
-	fmt.Fprintln(output)
 
 	if !branchesClean {
 		fmt.Fprintln(output, "Use --clean para deletar.")
@@ -96,6 +89,22 @@ func runBranches(cmd *cobra.Command, args []string) error {
 	}
 
 	return report(output, errorOutput, repo.Delete(candidates, branchesForce))
+}
+
+func printMerged(output io.Writer, merged []branch.Branch) error {
+	fmt.Fprintf(output, "Branches locais já mergeadas (%d):\n", len(merged))
+
+	writer := columns(output)
+	for _, mergedBranch := range merged {
+		fmt.Fprintf(writer, "  %s\t%s\n", mergedBranch.Name, describeMerge(mergedBranch.Merge))
+	}
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(output)
+
+	return nil
 }
 
 func ancestryOnly(branches []branch.Branch) []branch.Branch {

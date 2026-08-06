@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/worktree"
@@ -36,7 +35,7 @@ func runWorktrees(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(output, "Working trees (%d):\n", len(worktrees))
 
-	writer := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
+	writer := columns(output)
 	for _, entry := range worktrees {
 		marker := " "
 		if entry.Current {
