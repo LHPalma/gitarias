@@ -66,12 +66,9 @@ func runBranches(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	candidates := merged
-	if !branchesForce {
-		candidates = ancestryOnly(merged)
-		if held := len(merged) - len(candidates); held > 0 {
-			fmt.Fprintf(output, "%d branch(es) ficam de fora: o git recusa apagá-las com -d. Use --force para forçar.\n", held)
-		}
+	candidates := deletable(merged, branchesForce)
+	if held := len(merged) - len(candidates); held > 0 {
+		fmt.Fprintf(output, "%d branch(es) ficam de fora: o git recusa apagá-las com -d. Use --force para forçar.\n", held)
 	}
 
 	if len(candidates) == 0 {
@@ -107,16 +104,19 @@ func printMerged(output io.Writer, merged []branch.Branch) error {
 	return nil
 }
 
-func ancestryOnly(branches []branch.Branch) []branch.Branch {
-	var plain []branch.Branch
+func deletable(merged []branch.Branch, force bool) []branch.Branch {
+	if force {
+		return merged
+	}
 
-	for _, candidate := range branches {
+	var byAncestry []branch.Branch
+	for _, candidate := range merged {
 		if candidate.Merge == branch.MergedByAncestry {
-			plain = append(plain, candidate)
+			byAncestry = append(byAncestry, candidate)
 		}
 	}
 
-	return plain
+	return byAncestry
 }
 
 func describeMerge(kind branch.MergeKind) string {
