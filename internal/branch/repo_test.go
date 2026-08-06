@@ -166,21 +166,25 @@ func mergedResponses(base string, refs string, current string) map[string]gittes
 }
 
 func listings(base string, ancestors string, all string, current string) map[string]gittest.Response {
+	merged := "for-each-ref refs/heads/ --merged " + base + " --format=%(refname:short)"
+	every := "for-each-ref refs/heads/ --format=%(refname:short)"
+
 	return map[string]gittest.Response{
-		"for-each-ref refs/heads/ --merged " + base + " --format=%(refname:short)": {Output: ancestors},
-		"for-each-ref refs/heads/ --format=%(refname:short)":                       {Output: all},
+		merged:                  {Output: ancestors},
+		every:                   {Output: all},
 		"branch --show-current": {Output: current},
 	}
 }
 
 func probe(base string, name string, cherry gittest.Response) map[string]gittest.Response {
 	mergeBase, tree, virtual := "mb-"+name, "tree-"+name, "probe-"+name
+	commitTree := "commit-tree " + tree + " -p " + mergeBase + " -m " + equivalenceProbeMessage
 
 	return map[string]gittest.Response{
-		"merge-base " + base + " " + name:                                             {Output: mergeBase},
-		"rev-parse " + name + "^{tree}":                                               {Output: tree},
-		"commit-tree " + tree + " -p " + mergeBase + " -m " + equivalenceProbeMessage: {Output: virtual},
-		"cherry " + base + " " + virtual:                                              cherry,
+		"merge-base " + base + " " + name: {Output: mergeBase},
+		"rev-parse " + name + "^{tree}":   {Output: tree},
+		"cherry " + base + " " + virtual:  cherry,
+		commitTree:                        {Output: virtual},
 	}
 }
 
