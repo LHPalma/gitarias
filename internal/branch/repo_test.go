@@ -495,7 +495,7 @@ func TestDelete(t *testing.T) {
 	}
 	runner := gittest.NewRunner(responses)
 
-	results := NewRepo(runner).Delete([]Branch{{Name: "livre-a"}, {Name: "presa"}, {Name: "livre-b"}})
+	results := NewRepo(runner).Delete([]Branch{{Name: "livre-a"}, {Name: "presa"}, {Name: "livre-b"}}, false)
 
 	if len(results) != 3 {
 		t.Fatalf("esperava 3 resultados, veio %d", len(results))
@@ -522,7 +522,7 @@ func TestDelete(t *testing.T) {
 func TestDeleteWithEmptyListSkipsGit(t *testing.T) {
 	runner := gittest.NewRunner(nil)
 
-	results := NewRepo(runner).Delete(nil)
+	results := NewRepo(runner).Delete(nil, true)
 
 	if len(results) != 0 {
 		t.Errorf("esperava nenhum resultado, veio %d", len(results))
@@ -532,14 +532,46 @@ func TestDeleteWithEmptyListSkipsGit(t *testing.T) {
 	}
 }
 
-func TestDeleteNeverForces(t *testing.T) {
-	runner := gittest.NewRunner(map[string]gittest.Response{"branch -d qualquer": {Output: ""}})
+func TestDeleteNeverForcesWithoutPermission(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"branch -d comum":     {Output: ""},
+		"branch -d squashada": {Err: errors.New("the branch 'squashada' is not fully merged")},
+		"branch -d rebaseada": {Err: errors.New("the branch 'rebaseada' is not fully merged")},
+	})
 
-	NewRepo(runner).Delete([]Branch{{Name: "qualquer"}})
+	NewRepo(runner).Delete([]Branch{
+		{Name: "comum", Merge: MergedByAncestry},
+		{Name: "squashada", Merge: MergedBySquash},
+		{Name: "rebaseada", Merge: MergedByRebase},
+	}, false)
 
 	for _, call := range runner.Calls {
 		if strings.Contains(call, "-D") {
-			t.Fatalf("RN-01: deleção nunca pode usar -D, mas rodou %q", call)
+			t.Fatalf("RN-01: sem --force nada usa -D, mas rodou %q", call)
+		}
+	}
+}
+
+func TestDeleteForcesOnlyEquivalentBranches(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"branch -d comum":     {Output: ""},
+		"branch -D squashada": {Output: ""},
+		"branch -D rebaseada": {Output: ""},
+	})
+
+	NewRepo(runner).Delete([]Branch{
+		{Name: "comum", Merge: MergedByAncestry},
+		{Name: "squashada", Merge: MergedBySquash},
+		{Name: "rebaseada", Merge: MergedByRebase},
+	}, true)
+
+	wanted := []string{"branch -d comum", "branch -D squashada", "branch -D rebaseada"}
+	if len(runner.Calls) != len(wanted) {
+		t.Fatalf("chamadas = %v, queria %v", runner.Calls, wanted)
+	}
+	for index, call := range wanted {
+		if runner.Calls[index] != call {
+			t.Errorf("chamada %d = %q, queria %q", index, runner.Calls[index], call)
 		}
 	}
 }

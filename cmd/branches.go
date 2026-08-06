@@ -17,6 +17,7 @@ import (
 var (
 	branchesClean bool
 	branchesBase  string
+	branchesForce bool
 )
 
 var branchesCmd = &cobra.Command{
@@ -29,6 +30,7 @@ var branchesCmd = &cobra.Command{
 func init() {
 	branchesCmd.Flags().BoolVar(&branchesClean, "clean", false, "deleta as branches mergeadas, pedindo confirmação")
 	branchesCmd.Flags().StringVar(&branchesBase, "base", "", "branch base; se omitida, é detectada automaticamente")
+	branchesCmd.Flags().BoolVar(&branchesForce, "force", false, "com --clean, força a deleção das squashadas e rebaseadas, que o git recusa apagar com -d")
 	rootCmd.AddCommand(branchesCmd)
 }
 
@@ -71,7 +73,20 @@ func runBranches(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	confirmed, err := confirm(fmt.Sprintf("Deletar %d branch(es)? [y/N] ", len(merged)))
+	candidates := merged
+	if !branchesForce {
+		candidates = ancestryOnly(merged)
+		if held := len(merged) - len(candidates); held > 0 {
+			fmt.Printf("%d branch(es) ficam de fora: o git recusa apagá-las com -d. Use --force para forçar.\n", held)
+		}
+	}
+
+	if len(candidates) == 0 {
+		fmt.Println("Nenhuma branch pode ser deletada sem --force.")
+		return nil
+	}
+
+	confirmed, err := confirm(fmt.Sprintf("Deletar %d branch(es)? [y/N] ", len(candidates)))
 	if err != nil {
 		return err
 	}
@@ -80,7 +95,19 @@ func runBranches(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return report(repo.Delete(merged))
+	return report(repo.Delete(candidates, branchesForce))
+}
+
+func ancestryOnly(branches []branch.Branch) []branch.Branch {
+	var plain []branch.Branch
+
+	for _, candidate := range branches {
+		if candidate.Merge == branch.MergedByAncestry {
+			plain = append(plain, candidate)
+		}
+	}
+
+	return plain
 }
 
 func describeMerge(kind branch.MergeKind) string {

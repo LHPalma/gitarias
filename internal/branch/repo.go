@@ -181,11 +181,15 @@ func (repo *Repo) equivalents(base string, head string) ([]bool, error) {
 	return present, nil
 }
 
-func (repo *Repo) Delete(branches []Branch) []DeleteResult {
+func (repo *Repo) Delete(branches []Branch, forceEquivalent bool) []DeleteResult {
 	results := make([]DeleteResult, 0, len(branches))
 
 	for _, target := range branches {
-		_, err := repo.runner.Run("branch", "-d", target.Name)
+		flag := "-d"
+		if forceEquivalent && target.Merge != MergedByAncestry {
+			flag = "-D"
+		}
+		_, err := repo.runner.Run("branch", flag, target.Name)
 		results = append(results, DeleteResult{Branch: target, Err: err})
 	}
 
