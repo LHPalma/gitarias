@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/LHPalma/gitarias/internal/git"
+	"github.com/LHPalma/gitarias/internal/ui"
 	"github.com/LHPalma/gitarias/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -40,50 +40,12 @@ func runWorktrees(command *cobra.Command, repo *worktree.Repo) error {
 		if entry.Current {
 			marker = "*"
 		}
-		line := fmt.Sprintf("%s %s\t%s", marker, entry.Path, describeCheckout(entry))
-		if state := describeState(entry); state != "" {
+		line := fmt.Sprintf("%s %s\t%s", marker, entry.Path, ui.DescribeCheckout(entry))
+		if state := ui.DescribeState(entry); state != "" {
 			line += "\t" + state
 		}
 		fmt.Fprintln(writer, line)
 	}
 
 	return writer.Flush()
-}
-
-func describeCheckout(entry worktree.Worktree) string {
-	switch {
-	case entry.Bare:
-		return "(bare)"
-	case entry.Detached:
-		return "(HEAD destacado em " + shortHead(entry.Head) + ")"
-	case entry.Branch == "":
-		return "(sem branch)"
-	default:
-		return entry.Branch
-	}
-}
-
-func describeState(entry worktree.Worktree) string {
-	var states []string
-	if entry.Locked {
-		states = append(states, withReason("trancado", entry.LockedReason))
-	}
-	if entry.Prunable {
-		states = append(states, withReason("podável", entry.PrunableReason))
-	}
-	return strings.Join(states, ", ")
-}
-
-func withReason(state string, reason string) string {
-	if reason == "" {
-		return state
-	}
-	return state + ": " + reason
-}
-
-func shortHead(head string) string {
-	if len(head) > 7 {
-		return head[:7]
-	}
-	return head
 }

@@ -1,4 +1,4 @@
-package cmd
+package ui
 
 import (
 	"testing"
@@ -41,7 +41,7 @@ func TestDescribeCheckout(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := describeCheckout(test.entry); got != test.want {
+			if got := DescribeCheckout(test.entry); got != test.want {
 				t.Errorf("texto = %q, queria %q", got, test.want)
 			}
 		})
@@ -82,7 +82,7 @@ func TestDescribeState(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := describeState(test.entry); got != test.want {
+			if got := DescribeState(test.entry); got != test.want {
 				t.Errorf("texto = %q, queria %q", got, test.want)
 			}
 		})
@@ -90,7 +90,7 @@ func TestDescribeState(t *testing.T) {
 }
 
 func TestDescribeStateEmptyWhenNothingIsWrong(t *testing.T) {
-	if describeState(worktree.Worktree{Branch: "main"}) != "" {
+	if DescribeState(worktree.Worktree{Branch: "main"}) != "" {
 		t.Error("RN-10: sem estado a coluna precisa sair vazia, senão o tabwriter deixa espaço no fim da linha")
 	}
 }
