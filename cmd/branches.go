@@ -12,35 +12,39 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	branchesClean bool
-	branchesBase  string
-	branchesForce bool
-)
-
-var branchesCmd = &cobra.Command{
-	Use:   "branches",
-	Short: "Lista branches locais já mergeadas na branch base",
-	Args:  cobra.NoArgs,
-	RunE:  runBranches,
+type branchesOptions struct {
+	base  string
+	clean bool
+	force bool
 }
 
-func init() {
-	branchesCmd.Flags().BoolVar(&branchesClean, "clean", false, "deleta as branches mergeadas, pedindo confirmação")
-	branchesCmd.Flags().StringVar(&branchesBase, "base", "", "branch base; se omitida, é detectada automaticamente")
-	branchesCmd.Flags().BoolVar(&branchesForce, "force", false, "com --clean, força a deleção das squashadas e rebaseadas, que o git recusa apagar com -d")
-	rootCmd.AddCommand(branchesCmd)
+func newBranchesCommand(runner git.Runner) *cobra.Command {
+	var options branchesOptions
+
+	command := &cobra.Command{
+		Use:   "branches",
+		Short: "Lista branches locais já mergeadas na branch base",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, args []string) error {
+			return runBranches(command, branch.NewRepo(runner), options)
+		},
+	}
+
+	command.Flags().StringVar(&options.base, "base", "", "branch base; se omitida, é detectada automaticamente")
+	command.Flags().BoolVar(&options.clean, "clean", false, "deleta as branches mergeadas, pedindo confirmação")
+	command.Flags().BoolVar(&options.force, "force", false, "com --clean, força a deleção das squashadas e rebaseadas, que o git recusa apagar com -d")
+
+	return command
 }
 
-func runBranches(cmd *cobra.Command, args []string) error {
-	output, errorOutput := cmd.OutOrStdout(), cmd.ErrOrStderr()
-	repo := branch.NewRepo(git.CommandRunner{})
+func runBranches(command *cobra.Command, repo *branch.Repo, options branchesOptions) error {
+	output, errorOutput := command.OutOrStdout(), command.ErrOrStderr()
 
 	if err := repo.Ensure(); err != nil {
 		return err
 	}
 
-	base, err := repo.ResolveBase(branchesBase)
+	base, err := repo.ResolveBase(options.base)
 	if err != nil {
 		return err
 	}
@@ -61,12 +65,12 @@ func runBranches(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if !branchesClean {
+	if !options.clean {
 		fmt.Fprintln(output, "Use --clean para deletar.")
 		return nil
 	}
 
-	candidates := deletable(merged, branchesForce)
+	candidates := deletable(merged, options.force)
 	if held := len(merged) - len(candidates); held > 0 {
 		fmt.Fprintf(output, "%d branch(es) ficam de fora: o git recusa apagá-las com -d. Use --force para forçar.\n", held)
 	}
@@ -76,7 +80,7 @@ func runBranches(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	confirmed, err := confirm(cmd.InOrStdin(), output, fmt.Sprintf("Deletar %d branch(es)? [y/N] ", len(candidates)))
+	confirmed, err := confirm(command.InOrStdin(), output, fmt.Sprintf("Deletar %d branch(es)? [y/N] ", len(candidates)))
 	if err != nil {
 		return err
 	}
@@ -85,7 +89,7 @@ func runBranches(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return report(output, errorOutput, repo.Delete(candidates, branchesForce))
+	return report(output, errorOutput, repo.Delete(candidates, options.force))
 }
 
 func printMerged(output io.Writer, merged []branch.Branch) error {

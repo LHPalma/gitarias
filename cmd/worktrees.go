@@ -9,20 +9,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var worktreesCmd = &cobra.Command{
-	Use:   "worktrees",
-	Short: "Lista os working trees do repositório",
-	Args:  cobra.NoArgs,
-	RunE:  runWorktrees,
+func newWorktreesCommand(runner git.Runner) *cobra.Command {
+	return &cobra.Command{
+		Use:   "worktrees",
+		Short: "Lista os working trees do repositório",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, args []string) error {
+			return runWorktrees(command, worktree.NewRepo(runner))
+		},
+	}
 }
 
-func init() {
-	rootCmd.AddCommand(worktreesCmd)
-}
-
-func runWorktrees(cmd *cobra.Command, args []string) error {
-	output := cmd.OutOrStdout()
-	repo := worktree.NewRepo(git.CommandRunner{})
+func runWorktrees(command *cobra.Command, repo *worktree.Repo) error {
+	output := command.OutOrStdout()
 
 	if err := repo.Ensure(); err != nil {
 		return err
