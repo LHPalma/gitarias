@@ -1,7 +1,12 @@
 package main
 
-import "github.com/LHPalma/gitarias/cmd"
+import (
+	"os"
+
+	"github.com/LHPalma/gitarias/cmd"
+	"github.com/LHPalma/gitarias/internal/git"
+)
 
 func main() {
-	cmd.Execute()
+	os.Exit(cmd.Run(cmd.NewRootCommand(git.CommandRunner{})))
 }

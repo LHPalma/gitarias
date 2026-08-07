@@ -28,7 +28,7 @@ func execute(t *testing.T, responses map[string]gittest.Response, answer string,
 	runner := gittest.NewRunner(responses)
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
-	command := newRootCommand(runner)
+	command := NewRootCommand(runner)
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.SetIn(strings.NewReader(answer))
@@ -266,7 +266,7 @@ func TestBranchesCommandPropagatesListingFailure(t *testing.T) {
 }
 
 func TestBranchesCommandPropagatesWriteFailure(t *testing.T) {
-	command := newRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")))
+	command := NewRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")))
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"branches"})
@@ -277,7 +277,7 @@ func TestBranchesCommandPropagatesWriteFailure(t *testing.T) {
 }
 
 func TestBranchesCommandPropagatesReadFailure(t *testing.T) {
-	command := newRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")))
+	command := NewRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")))
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetIn(brokenReader{})
@@ -485,8 +485,50 @@ func TestBranchesCommandWithEveryBranchHeld(t *testing.T) {
 	}
 }
 
+func run(t *testing.T, responses map[string]gittest.Response, args ...string) (int, string) {
+	t.Helper()
+
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+
+	command := NewRootCommand(gittest.NewRunner(responses))
+	command.SetOut(stdout)
+	command.SetErr(stderr)
+	command.SetArgs(args)
+
+	return Run(command), stderr.String()
+}
+
+func TestRunReturnsZeroWhenTheCommandSucceeds(t *testing.T) {
+	code, stderr := run(t, repository("main", "main\nfeat-a", "main\nfeat-a", "main"), "branches")
+
+	if code != 0 {
+		t.Errorf("código = %d, queria 0", code)
+	}
+	if stderr != "" {
+		t.Errorf("RN-09: sem falha o stderr fica vazio, veio %q", stderr)
+	}
+}
+
+func TestRunReturnsOneAndReportsWhenTheCommandFails(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Err: errNotARepository},
+	}
+
+	code, stderr := run(t, responses, "branches")
+
+	if code != 1 {
+		t.Errorf("código = %d, queria 1", code)
+	}
+	if !strings.Contains(stderr, "erro: ") {
+		t.Errorf("stderr = %q, queria o prefixo que o usuário vê", stderr)
+	}
+	if !strings.Contains(stderr, "não é um repositório git") {
+		t.Errorf("stderr = %q, queria carregar o erro de origem", stderr)
+	}
+}
+
 func TestBranchesCommandPropagatesHeldSectionWriteFailure(t *testing.T) {
-	command := newRootCommand(gittest.NewRunner(onlyHeldRepository()))
+	command := NewRootCommand(gittest.NewRunner(onlyHeldRepository()))
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"branches"})
