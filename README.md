@@ -83,6 +83,25 @@ squashadas e rebaseadas, nunca nas demais. O que a flag libera é estreito: ela
 autoriza o `gtr` a confiar na própria comparação de conteúdo quando o git se
 recusa por ancestralidade, e nada além disso.
 
+**Branch em uso por outro working tree fica de fora.** O git recusa apagá-la,
+inclusive com `-D`, então oferecê-la seria prometer o que a ferramenta não pode
+cumprir. Ela aparece à parte, com o caminho e as três formas de soltar:
+
+```
+1 branch(es) em uso por outro working tree, fora da lista:
+  presa  ~/projeto-fix
+
+O git recusa apagá-las, mesmo com --force. Para soltar, escolha um:
+  git -C <caminho> checkout --detach   solta a branch e preserva o working tree
+  git worktree remove <caminho>        apaga o working tree, inclusive arquivos ignorados
+  git worktree prune                   quando o diretório já sumiu
+```
+
+O `gtr` não executa nenhuma delas. As três custam coisas diferentes — perder o
+working tree, perder alterações não commitadas, ou só mover o `HEAD` —, e
+`git worktree remove` apaga **arquivos ignorados** sem avisar, o que inclui
+`.env` e afins.
+
 **Como a base é escolhida**, parando no primeiro que funcionar:
 
 1. o valor de `--base`, se informado;
@@ -123,6 +142,9 @@ Estas não são configurações — são propriedades do código:
   localmente continua íntegra no servidor.
 - **Nunca apaga a branch atual, a base, a `main` ou a `master`**, mesmo quando
   não são a base.
+- **Nunca mexe em outro working tree.** Branch em uso em outro diretório de
+  trabalho fica fora da lista, com o caminho e as formas de soltar — a escolha
+  entre elas é sua, porque custam coisas diferentes.
 - **Nunca roda através de um shell.** Os comandos git são invocados
   diretamente, sem `sh -c`. Uma branch com nome esquisito chega ao git como
   argumento literal.
