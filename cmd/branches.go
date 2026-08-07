@@ -9,6 +9,7 @@ import (
 
 	"github.com/LHPalma/gitarias/internal/branch"
 	"github.com/LHPalma/gitarias/internal/git"
+	"github.com/LHPalma/gitarias/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +27,7 @@ func newBranchesCommand(runner git.Runner) *cobra.Command {
 		Short: "Lista branches locais já mergeadas na branch base",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, args []string) error {
-			return runBranches(command, branch.NewRepo(runner), options)
+			return runBranches(command, branch.NewRepo(runner), worktree.NewRepo(runner), options)
 		},
 	}
 
@@ -37,7 +38,7 @@ func newBranchesCommand(runner git.Runner) *cobra.Command {
 	return command
 }
 
-func runBranches(command *cobra.Command, repo *branch.Repo, options branchesOptions) error {
+func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.Repo, options branchesOptions) error {
 	output, errorOutput := command.OutOrStdout(), command.ErrOrStderr()
 
 	if err := repo.Ensure(); err != nil {
@@ -54,15 +55,25 @@ func runBranches(command *cobra.Command, repo *branch.Repo, options branchesOpti
 		return err
 	}
 
+	free, held := splitByWorktree(merged, checkedOutElsewhere(worktrees))
+
 	fmt.Fprintf(output, "Base: %s (%s)\n\n", base.Name, describeSource(base.Source))
 
-	if len(merged) == 0 {
+	if len(free) == 0 && len(held) == 0 {
 		fmt.Fprintln(output, "Nenhuma branch local mergeada para limpar.")
 		return nil
 	}
 
-	if err := printMerged(output, merged); err != nil {
-		return err
+	if len(free) > 0 {
+		if err := printMerged(output, free); err != nil {
+			return err
+		}
+	}
+
+	if len(held) > 0 {
+		if err := printHeld(output, held); err != nil {
+			return err
+		}
 	}
 
 	if !options.clean {
@@ -70,13 +81,13 @@ func runBranches(command *cobra.Command, repo *branch.Repo, options branchesOpti
 		return nil
 	}
 
-	candidates := deletable(merged, options.force)
-	if held := len(merged) - len(candidates); held > 0 {
-		fmt.Fprintf(output, "%d branch(es) ficam de fora: o git recusa apagá-las com -d. Use --force para forçar.\n", held)
+	candidates := deletable(free, options.force)
+	if equivalent := len(free) - len(candidates); equivalent > 0 {
+		fmt.Fprintf(output, "%d branch(es) ficam de fora: o git recusa apagá-las com -d. Use --force para forçar.\n", equivalent)
 	}
 
 	if len(candidates) == 0 {
-		fmt.Fprintln(output, "Nenhuma branch pode ser deletada sem --force.")
+		fmt.Fprintln(output, "Nenhuma branch pode ser deletada agora.")
 		return nil
 	}
 
@@ -90,6 +101,55 @@ func runBranches(command *cobra.Command, repo *branch.Repo, options branchesOpti
 	}
 
 	return report(output, errorOutput, repo.Delete(candidates, options.force))
+}
+
+func checkedOutElsewhere(worktrees *worktree.Repo) map[string]string {
+	entries, err := worktrees.List()
+	if err != nil {
+		return nil
+	}
+
+	paths := map[string]string{}
+	for _, entry := range entries {
+		if entry.Current || entry.Branch == "" {
+			continue
+		}
+		paths[entry.Branch] = entry.Path
+	}
+
+	return paths
+}
+
+func splitByWorktree(merged []branch.Branch, paths map[string]string) (free []branch.Branch, held []heldBranch) {
+	for _, candidate := range merged {
+		if path, taken := paths[candidate.Name]; taken {
+			held = append(held, heldBranch{Branch: candidate, Path: path})
+			continue
+		}
+		free = append(free, candidate)
+	}
+
+	return free, held
+}
+
+func printHeld(output io.Writer, held []heldBranch) error {
+	fmt.Fprintf(output, "%d branch(es) em uso por outro working tree, fora da lista:\n", len(held))
+
+	writer := columns(output)
+	for _, entry := range held {
+		fmt.Fprintf(writer, "  %s\t%s\n", entry.Branch.Name, entry.Path)
+	}
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(output, "\nO git recusa apagá-las, mesmo com --force. Para soltar, escolha um:")
+	fmt.Fprintln(output, "  git -C <caminho> checkout --detach   solta a branch e preserva o working tree")
+	fmt.Fprintln(output, "  git worktree remove <caminho>        apaga o working tree, inclusive arquivos ignorados")
+	fmt.Fprintln(output, "  git worktree prune                   quando o diretório já sumiu")
+	fmt.Fprintln(output)
+
+	return nil
 }
 
 func printMerged(output io.Writer, merged []branch.Branch) error {

@@ -47,6 +47,8 @@ func repository(base string, ancestors string, all string, current string) map[s
 		"for-each-ref refs/heads/ --merged " + base + " --format=%(refname:short)": {Output: ancestors},
 		"for-each-ref refs/heads/ --format=%(refname:short)":                       {Output: all},
 		"branch --show-current":                                                    {Output: current},
+		"worktree list --porcelain":                                                {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/" + current + "\n"},
+		"rev-parse --show-toplevel":                                                {Output: "/repo"},
 	}
 }
 
@@ -353,5 +355,143 @@ func TestBranchesCommandUsesTheRequestedBase(t *testing.T) {
 		if strings.Contains(call, "symbolic-ref") {
 			t.Fatalf("a flag deveria curto-circuitar a detecção, mas rodou %q", call)
 		}
+	}
+}
+
+func heldRepository() map[string]gittest.Response {
+	responses := repository("main", "main\nlivre\npresa", "main\nlivre\npresa", "main")
+	responses["worktree list --porcelain"] = gittest.Response{Output: "" +
+		"worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /outro\nHEAD def\nbranch refs/heads/presa\n"}
+
+	return responses
+}
+
+func TestBranchesCommandHoldsBranchUsedByAnotherWorktree(t *testing.T) {
+	result := execute(t, heldRepository(), "", "branches")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "  livre\tmergeada") && !strings.Contains(result.stdout, "livre") {
+		t.Errorf("a branch livre deveria estar listada, veio %q", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "em uso por outro working tree") {
+		t.Errorf("saída = %q, queria a seção das presas", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "/outro") {
+		t.Errorf("saída = %q, queria o caminho do working tree", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "checkout --detach") {
+		t.Errorf("saída = %q, queria ensinar como soltar", result.stdout)
+	}
+}
+
+func TestBranchesCommandNeverDeletesBranchUsedByAnotherWorktree(t *testing.T) {
+	responses := heldRepository()
+	responses["branch -d livre"] = gittest.Response{Output: ""}
+
+	for _, args := range [][]string{
+		{"branches", "--clean"},
+		{"branches", "--clean", "--force"},
+	} {
+		result := execute(t, responses, "y\n", args...)
+
+		if result.err != nil {
+			t.Fatalf("%v: não esperava erro, veio %v", args, result.err)
+		}
+		for _, call := range result.calls {
+			if strings.Contains(call, "presa") && deletesABranch(call) {
+				t.Fatalf("%v: o git recusaria, mas o comando tentou %q", args, call)
+			}
+		}
+	}
+}
+
+func TestBranchesCommandCountsOnlyFreeBranches(t *testing.T) {
+	result := execute(t, heldRepository(), "", "branches")
+
+	if !strings.Contains(result.stdout, "Branches locais já mergeadas (1):") {
+		t.Errorf("a presa não pode entrar na contagem, veio %q", result.stdout)
+	}
+}
+
+func TestBranchesCommandDegradesWhenWorktreesCannotBeListed(t *testing.T) {
+	responses := heldRepository()
+	responses["worktree list --porcelain"] = gittest.Response{Err: errNotARepository}
+
+	result := execute(t, responses, "", "branches")
+
+	if result.err != nil {
+		t.Fatalf("falha ao listar working trees não pode derrubar o comando, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "presa") {
+		t.Errorf("sem a lista de working trees a proteção some, e a branch volta a aparecer; veio %q", result.stdout)
+	}
+	if strings.Contains(result.stdout, "em uso por outro working tree") {
+		t.Errorf("sem informação não dá para afirmar que está presa, veio %q", result.stdout)
+	}
+}
+
+func TestBranchesCommandCurrentWorktreeDoesNotHoldItsOwnBranch(t *testing.T) {
+	responses := repository("main", "main\nfeat-a", "main\nfeat-a", "main")
+	responses["worktree list --porcelain"] = gittest.Response{Output: "" +
+		"worktree /repo\nHEAD abc\nbranch refs/heads/feat-a\n"}
+	responses["rev-parse --show-toplevel"] = gittest.Response{Output: "/repo"}
+
+	result := execute(t, responses, "", "branches")
+
+	if strings.Contains(result.stdout, "em uso por outro working tree") {
+		t.Errorf("o worktree atual não prende ninguém, veio %q", result.stdout)
+	}
+}
+
+func TestBranchesCommandHeldSectionNeverEndsALineWithSpace(t *testing.T) {
+	result := execute(t, heldRepository(), "", "branches")
+
+	for number, line := range strings.Split(result.stdout, "\n") {
+		if strings.HasSuffix(line, " ") {
+			t.Errorf("RN-10: a linha %d termina em espaço: %q", number+1, line)
+		}
+	}
+}
+
+func onlyHeldRepository() map[string]gittest.Response {
+	responses := repository("main", "main\npresa", "main\npresa", "main")
+	responses["worktree list --porcelain"] = gittest.Response{Output: "" +
+		"worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /outro\nHEAD def\nbranch refs/heads/presa\n"}
+
+	return responses
+}
+
+func TestBranchesCommandWithEveryBranchHeld(t *testing.T) {
+	result := execute(t, onlyHeldRepository(), "y\n", "branches", "--clean", "--force")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if strings.Contains(result.stdout, "Branches locais já mergeadas") {
+		t.Errorf("sem branch livre não há listagem, veio %q", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "em uso por outro working tree") {
+		t.Errorf("saída = %q, queria a seção das presas", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "Nenhuma branch pode ser deletada agora.") {
+		t.Errorf("saída = %q, queria dizer que não há o que deletar", result.stdout)
+	}
+	if strings.Contains(result.stdout, "[y/N]") {
+		t.Error("sem candidata não pode nem perguntar")
+	}
+}
+
+func TestBranchesCommandPropagatesHeldSectionWriteFailure(t *testing.T) {
+	command := newRootCommand(gittest.NewRunner(onlyHeldRepository()))
+	command.SetOut(brokenWriter{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"branches"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha de escrita na seção das presas tem de virar erro")
 	}
 }
