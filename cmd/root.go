@@ -2,13 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/spf13/cobra"
 )
 
-func newRootCommand(runner git.Runner) *cobra.Command {
+func NewRootCommand(runner git.Runner) *cobra.Command {
 	command := &cobra.Command{
 		Use:           "gtr",
 		Short:         "Utilitários de git pro dia a dia",
@@ -23,11 +22,11 @@ func newRootCommand(runner git.Runner) *cobra.Command {
 	return command
 }
 
-func Execute() {
-	command := newRootCommand(git.CommandRunner{})
-
+func Run(command *cobra.Command) int {
 	if err := command.Execute(); err != nil {
 		fmt.Fprintln(command.ErrOrStderr(), "erro:", err)
-		os.Exit(1)
+		return 1
 	}
+
+	return 0
 }
