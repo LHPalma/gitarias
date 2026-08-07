@@ -9,6 +9,7 @@ import (
 
 	"github.com/LHPalma/gitarias/internal/branch"
 	"github.com/LHPalma/gitarias/internal/git"
+	"github.com/LHPalma/gitarias/internal/ui"
 	"github.com/LHPalma/gitarias/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -57,7 +58,7 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 
 	free, held := splitByWorktree(merged, checkedOutElsewhere(worktrees))
 
-	fmt.Fprintf(output, "Base: %s (%s)\n\n", base.Name, describeSource(base.Source))
+	fmt.Fprintf(output, "Base: %s (%s)\n\n", base.Name, ui.DescribeSource(base.Source))
 
 	if len(free) == 0 && len(held) == 0 {
 		fmt.Fprintln(output, "Nenhuma branch local mergeada para limpar.")
@@ -157,7 +158,7 @@ func printMerged(output io.Writer, merged []branch.Branch) error {
 
 	writer := columns(output)
 	for _, mergedBranch := range merged {
-		fmt.Fprintf(writer, "  %s\t%s\n", mergedBranch.Name, describeMerge(mergedBranch.Merge))
+		fmt.Fprintf(writer, "  %s\t%s\n", mergedBranch.Name, ui.DescribeMerge(mergedBranch.Merge))
 	}
 	if err := writer.Flush(); err != nil {
 		return err
@@ -181,28 +182,6 @@ func deletable(merged []branch.Branch, force bool) []branch.Branch {
 	}
 
 	return byAncestry
-}
-
-func describeMerge(kind branch.MergeKind) string {
-	switch kind {
-	case branch.MergedBySquash:
-		return "squashada"
-	case branch.MergedByRebase:
-		return "rebaseada"
-	default:
-		return "mergeada"
-	}
-}
-
-func describeSource(source branch.BaseSource) string {
-	switch source {
-	case branch.BaseFromFlag:
-		return "informada via --base"
-	case branch.BaseFromOriginHead:
-		return "detectada via origin/HEAD"
-	default:
-		return "encontrada localmente"
-	}
 }
 
 func confirm(input io.Reader, output io.Writer, prompt string) (bool, error) {
