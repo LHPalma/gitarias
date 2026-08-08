@@ -43,3 +43,47 @@ func TestParseNamesTheAlternatives(t *testing.T) {
 		}
 	}
 }
+
+func TestExtension(t *testing.T) {
+	tests := []struct {
+		chosen Format
+		want   string
+	}{
+		{chosen: Text, want: ".txt"},
+		{chosen: CSV, want: ".csv"},
+		{chosen: TSV, want: ".tsv"},
+		{chosen: JSON, want: ".json"},
+	}
+
+	for _, test := range tests {
+		t.Run(string(test.chosen), func(t *testing.T) {
+			if got := test.chosen.Extension(); got != test.want {
+				t.Errorf("extensao = %q, queria %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestPath(t *testing.T) {
+	tests := []struct {
+		name   string
+		chosen Format
+		path   string
+		want   string
+	}{
+		{name: "sem extensao ganha a do formato", chosen: CSV, path: "ignorados", want: "ignorados.csv"},
+		{name: "json tambem", chosen: JSON, path: "dados", want: "dados.json"},
+		{name: "extensao presente fica como veio", chosen: CSV, path: "dados.txt", want: "dados.txt"},
+		{name: "extensao errada nao e corrigida", chosen: JSON, path: "dados.csv", want: "dados.csv"},
+		{name: "caminho com diretorio", chosen: TSV, path: "saida/ignorados", want: "saida/ignorados.tsv"},
+		{name: "diretorio com ponto no meio", chosen: CSV, path: "v1.2/ignorados", want: "v1.2/ignorados.csv"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.chosen.Path(test.path); got != test.want {
+				t.Errorf("caminho = %q, queria %q", got, test.want)
+			}
+		})
+	}
+}

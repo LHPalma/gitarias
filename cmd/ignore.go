@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 
 	"github.com/LHPalma/gitarias/internal/format"
@@ -13,6 +14,7 @@ import (
 type ignoreListOptions struct {
 	expand    bool
 	format    string
+	output    string
 	separator string
 }
 
@@ -41,6 +43,7 @@ func newIgnoreListCommand(runner Runner) *cobra.Command {
 
 	command.Flags().BoolVar(&options.expand, "expand", false, "lista arquivo a arquivo em vez de colapsar o diretório ignorado")
 	command.Flags().StringVar(&options.format, "format", string(format.Text), "formato da saída: text, csv, tsv ou json")
+	command.Flags().StringVar(&options.output, "output", "", "grava num arquivo em vez do stdout; sem extensão, a do formato é acrescentada")
 	command.Flags().StringVar(&options.separator, "separator", string(format.Comma), "separador do csv: , ; | ou \\t")
 
 	return command
@@ -66,7 +69,22 @@ func runIgnoreList(command *cobra.Command, repo *ignore.Repo, options ignoreList
 		return err
 	}
 
-	return render(command.OutOrStdout(), chosen, separator, options.expand, entries)
+	if options.output == "" {
+		return render(command.OutOrStdout(), chosen, separator, options.expand, entries)
+	}
+
+	return renderToFile(chosen.Path(options.output), chosen, separator, options.expand, entries)
+}
+
+func renderToFile(path string, chosen format.Format, separator format.Separator, expand bool, entries []ignore.Entry) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	return writeAndClose(file, func(output io.Writer) error {
+		return render(output, chosen, separator, expand, entries)
+	})
 }
 
 func resolveSeparator(command *cobra.Command, chosen format.Format, options ignoreListOptions) (format.Separator, error) {

@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -411,5 +413,60 @@ func TestIgnoreListCommandJSONWithNothingIgnored(t *testing.T) {
 	}
 	if result.stdout != "[]\n" {
 		t.Errorf("saída = %q, queria a lista vazia e nunca a frase em português", result.stdout)
+	}
+}
+
+func writeTo(t *testing.T, path string, args ...string) string {
+	t.Helper()
+
+	result := execute(t, populated(), "", append([]string{"ignore", "list", "--output", path}, args...)...)
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if result.stdout != "" {
+		t.Errorf("RN-09: com --output o stdout fica limpo, veio %q", result.stdout)
+	}
+
+	return result.stdout
+}
+
+func TestIgnoreListCommandWritesTheFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ignorados")
+
+	writeTo(t, path, "--format", "csv")
+
+	content, err := os.ReadFile(path + ".csv")
+	if err != nil {
+		t.Fatalf("o arquivo tinha de existir com a extensão do formato: %v", err)
+	}
+	if !strings.HasPrefix(string(content), bom) {
+		t.Errorf("conteúdo = %q, queria o BOM também no arquivo", content)
+	}
+	if !strings.Contains(string(content), "app.log") {
+		t.Errorf("conteúdo = %q, queria as linhas", content)
+	}
+}
+
+func TestIgnoreListCommandKeepsThePathThatCameWithAnExtension(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dados.txt")
+
+	writeTo(t, path, "--format", "json")
+
+	if _, err := os.ReadFile(path); err != nil {
+		t.Fatalf("o caminho pedido tem de ser respeitado: %v", err)
+	}
+	if _, err := os.Stat(path + ".json"); err == nil {
+		t.Error("a ferramenta não pode inventar um segundo arquivo")
+	}
+}
+
+func TestIgnoreListCommandPropagatesTheFileFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sem-diretorio", "ignorados.csv")
+
+	result := execute(t, populated(), "", "ignore", "list", "--format", "csv", "--output", path)
+
+	if result.err == nil {
+		t.Fatal("diretório inexistente tem de virar erro")
 	}
 }
