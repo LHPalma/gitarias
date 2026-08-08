@@ -539,3 +539,71 @@ func TestIgnoreListCommandNamesTheCSVColumns(t *testing.T) {
 		t.Errorf("cabeçalho = %q, queria os quatro nomes de coluna", header)
 	}
 }
+
+func TestIgnoreListCommandDropsTheHeaderOnRequest(t *testing.T) {
+	tests := []struct {
+		chosen string
+		first  string
+	}{
+		{chosen: "csv", first: ".gitignore,2,*.log,app.log"},
+		{chosen: "tsv", first: ".gitignore\t2\t*.log\tapp.log"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.chosen, func(t *testing.T) {
+			result := execute(t, populated(), "", "ignore", "list", "--format", test.chosen, "--no-header")
+
+			if result.err != nil {
+				t.Fatalf("não esperava erro, veio %v", result.err)
+			}
+
+			header, _, _ := strings.Cut(result.stdout, "\n")
+			if header != test.first {
+				t.Errorf("primeira linha = %q, queria o primeiro dado e não os nomes de coluna", header)
+			}
+			if strings.Contains(result.stdout, "origem") {
+				t.Errorf("saída = %q, o cabeçalho tinha de ter sumido", result.stdout)
+			}
+		})
+	}
+}
+
+func TestIgnoreListCommandKeepsTheHeaderByDefault(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "csv")
+
+	if !strings.HasPrefix(result.stdout, "origem,linha,padrão,caminho\n") {
+		t.Errorf("saída = %q, sem a flag o cabeçalho fica", result.stdout)
+	}
+}
+
+func TestIgnoreListCommandWithoutHeaderAndWithoutEntries(t *testing.T) {
+	responses := ignoring("inexistente\x00", "")
+	responses["check-ignore -z --stdin -v"] = gittest.Response{Err: &git.ExitError{Code: 1, Message: ""}}
+
+	result := execute(t, responses, "", "ignore", "list", "--format", "csv", "--no-header")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if result.stdout != "" {
+		t.Errorf("saída = %q, sem cabeçalho e sem linha nada sai", result.stdout)
+	}
+}
+
+func TestIgnoreListCommandRefusesNoHeaderOutsideTheDelimitedFormats(t *testing.T) {
+	for _, chosen := range []string{"json", "text"} {
+		t.Run("recusa com "+chosen, func(t *testing.T) {
+			result := execute(t, populated(), "", "ignore", "list", "--format", chosen, "--no-header")
+
+			if result.err == nil {
+				t.Fatal("flag setada de propósito e descartada calada é o pior modo de falha")
+			}
+			if result.stdout != "" {
+				t.Errorf("RN-09: nada pode ir para o stdout, veio %q", result.stdout)
+			}
+			if len(result.calls) != 0 {
+				t.Errorf("chamadas = %v, a validação da flag vem antes de tocar no git", result.calls)
+			}
+		})
+	}
+}

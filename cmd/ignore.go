@@ -14,6 +14,7 @@ import (
 type ignoreListOptions struct {
 	expand    bool
 	format    string
+	noHeader  bool
 	output    string
 	separator string
 }
@@ -43,6 +44,7 @@ func newIgnoreListCommand(runner Runner) *cobra.Command {
 
 	command.Flags().BoolVar(&options.expand, "expand", false, "lista arquivo a arquivo em vez de colapsar o diretório ignorado")
 	command.Flags().StringVar(&options.format, "format", string(format.Text), "formato da saída: text, csv, tsv ou json")
+	command.Flags().BoolVar(&options.noHeader, "no-header", false, "com csv ou tsv, omite a linha de nomes das colunas")
 	command.Flags().StringVar(&options.output, "output", "", "grava num arquivo em vez do stdout; sem extensão, a do formato é acrescentada")
 	command.Flags().StringVar(&options.separator, "separator", string(format.Comma), "separador do csv: , ; | ou \\t")
 
@@ -53,6 +55,10 @@ func runIgnoreList(command *cobra.Command, repo *ignore.Repo, options ignoreList
 	chosen, err := format.Parse(options.format)
 	if err != nil {
 		return err
+	}
+
+	if command.Flags().Changed("no-header") && !chosen.Delimited() {
+		return fmt.Errorf("--no-header só vale com --format csv ou tsv, e veio --format %s", chosen)
 	}
 
 	separator, err := resolveSeparator(command, chosen, options)
@@ -69,7 +75,7 @@ func runIgnoreList(command *cobra.Command, repo *ignore.Repo, options ignoreList
 		return err
 	}
 
-	rendering := ignoredRendering{format: chosen, separator: separator, expand: options.expand, header: true}
+	rendering := ignoredRendering{format: chosen, separator: separator, expand: options.expand, header: !options.noHeader}
 
 	if options.output == "" {
 		return render(command.OutOrStdout(), rendering, entries)
@@ -126,7 +132,7 @@ func resolveSeparator(command *cobra.Command, chosen format.Format, options igno
 func render(output io.Writer, rendering ignoredRendering, entries []ignore.Entry) error {
 	switch {
 	case rendering.format.Delimited():
-		return format.WriteCSV(output, rendering.separator, ignoredRows(entries))
+		return format.WriteCSV(output, rendering.separator, ignoredRows(entries, rendering.header))
 	case rendering.format == format.JSON:
 		return format.WriteJSON(output, ignoredRecords(entries))
 	default:
@@ -134,9 +140,11 @@ func render(output io.Writer, rendering ignoredRendering, entries []ignore.Entry
 	}
 }
 
-func ignoredRows(entries []ignore.Entry) [][]string {
+func ignoredRows(entries []ignore.Entry, header bool) [][]string {
 	rows := make([][]string, 0, len(entries)+1)
-	rows = append(rows, []string{"origem", "linha", "padrão", "caminho"})
+	if header {
+		rows = append(rows, []string{"origem", "linha", "padrão", "caminho"})
+	}
 	for _, entry := range entries {
 		rows = append(rows, []string{entry.Source, strconv.Itoa(entry.Line), entry.Pattern, entry.Path})
 	}
