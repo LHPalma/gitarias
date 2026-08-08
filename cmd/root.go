@@ -16,6 +16,7 @@ func NewRootCommand(runner Runner) *cobra.Command {
 	}
 
 	command.AddCommand(newBranchesCommand(runner))
+	command.AddCommand(newIgnoreCommand(runner))
 	command.AddCommand(newWorktreesCommand(runner))
 
 	return command
