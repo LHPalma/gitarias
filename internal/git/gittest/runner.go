@@ -8,10 +8,11 @@ import (
 type Runner struct {
 	Responses map[string]Response
 	Calls     []string
+	Inputs    map[string]string
 }
 
 func NewRunner(responses map[string]Response) *Runner {
-	return &Runner{Responses: responses}
+	return &Runner{Responses: responses, Inputs: map[string]string{}}
 }
 
 func (runner *Runner) Run(args ...string) (string, error) {
@@ -24,4 +25,10 @@ func (runner *Runner) Run(args ...string) (string, error) {
 	}
 
 	return response.Output, response.Err
+}
+
+func (runner *Runner) RunWithInput(input string, args ...string) (string, error) {
+	runner.Inputs[strings.Join(args, " ")] = input
+
+	return runner.Run(args...)
 }
