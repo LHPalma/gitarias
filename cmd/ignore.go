@@ -69,32 +69,34 @@ func runIgnoreList(command *cobra.Command, repo *ignore.Repo, options ignoreList
 		return err
 	}
 
+	rendering := ignoredRendering{format: chosen, separator: separator, expand: options.expand, header: true}
+
 	if options.output == "" {
-		return render(command.OutOrStdout(), chosen, separator, options.expand, entries)
+		return render(command.OutOrStdout(), rendering, entries)
 	}
 
-	return renderToFile(chosen.Path(options.output), chosen, separator, options.expand, entries)
+	return renderToFile(chosen.Path(options.output), rendering, entries)
 }
 
-func renderToFile(path string, chosen format.Format, separator format.Separator, expand bool, entries []ignore.Entry) error {
+func renderToFile(path string, rendering ignoredRendering, entries []ignore.Entry) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 
 	return writeAndClose(file, func(output io.Writer) error {
-		return renderForFile(output, chosen, separator, expand, entries)
+		return renderForFile(output, rendering, entries)
 	})
 }
 
-func renderForFile(output io.Writer, chosen format.Format, separator format.Separator, expand bool, entries []ignore.Entry) error {
-	if chosen.Delimited() {
+func renderForFile(output io.Writer, rendering ignoredRendering, entries []ignore.Entry) error {
+	if rendering.format.Delimited() {
 		if err := format.WriteByteOrderMark(output); err != nil {
 			return err
 		}
 	}
 
-	return render(output, chosen, separator, expand, entries)
+	return render(output, rendering, entries)
 }
 
 func resolveSeparator(command *cobra.Command, chosen format.Format, options ignoreListOptions) (format.Separator, error) {
@@ -121,14 +123,14 @@ func resolveSeparator(command *cobra.Command, chosen format.Format, options igno
 	return separator, nil
 }
 
-func render(output io.Writer, chosen format.Format, separator format.Separator, expand bool, entries []ignore.Entry) error {
+func render(output io.Writer, rendering ignoredRendering, entries []ignore.Entry) error {
 	switch {
-	case chosen.Delimited():
-		return format.WriteCSV(output, separator, ignoredRows(entries))
-	case chosen == format.JSON:
+	case rendering.format.Delimited():
+		return format.WriteCSV(output, rendering.separator, ignoredRows(entries))
+	case rendering.format == format.JSON:
 		return format.WriteJSON(output, ignoredRecords(entries))
 	default:
-		return renderIgnoredText(output, expand, entries)
+		return renderIgnoredText(output, rendering.expand, entries)
 	}
 }
 
