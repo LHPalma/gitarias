@@ -67,11 +67,13 @@ func parse(output string) []Entry {
 			continue
 		}
 
+		path := fields[index+3]
 		entries = append(entries, Entry{
-			Source:  fields[index],
-			Line:    line,
-			Pattern: fields[index+2],
-			Path:    fields[index+3],
+			Source:    fields[index],
+			Line:      line,
+			Pattern:   fields[index+2],
+			Path:      path,
+			Directory: strings.HasSuffix(path, "/"),
 		})
 	}
 

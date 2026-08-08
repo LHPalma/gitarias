@@ -57,11 +57,21 @@ func runIgnoreList(command *cobra.Command, repo *ignore.Repo, expand bool) error
 		return err
 	}
 
-	if !expand {
+	if !expand && anyDirectory(entries) {
 		fmt.Fprintln(output, "\nDiretório ignorado conta como uma linha só. Use --expand para listar arquivo a arquivo.")
 	}
 
 	return nil
+}
+
+func anyDirectory(entries []ignore.Entry) bool {
+	for _, entry := range entries {
+		if entry.Directory {
+			return true
+		}
+	}
+
+	return false
 }
 
 func printIgnored(output io.Writer, entries []ignore.Entry) error {

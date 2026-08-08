@@ -48,6 +48,41 @@ func TestIgnoreListCommandLists(t *testing.T) {
 	}
 }
 
+func TestIgnoreListCommandOffersExpandOnlyWhenSomethingCollapsed(t *testing.T) {
+	tests := []struct {
+		name    string
+		matches string
+		want    bool
+	}{
+		{
+			name:    "com diretorio na lista a dica aparece",
+			matches: ".gitignore\x001\x00node_modules/\x00node_modules/\x00",
+			want:    true,
+		},
+		{
+			name:    "so arquivo nao colapsa nada e a dica some",
+			matches: ".gitignore\x001\x00/gtr\x00gtr\x00",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := execute(t, ignoring("qualquer\x00", test.matches), "", "ignore", "list")
+
+			if result.err != nil {
+				t.Fatalf("não esperava erro, veio %v", result.err)
+			}
+			if !strings.Contains(result.stdout, "Ignorados (1):") {
+				t.Fatalf("a entrada tem de estar listada, senão o teste passa de graça; veio %q", result.stdout)
+			}
+
+			if hinted := strings.Contains(result.stdout, "--expand"); hinted != test.want {
+				t.Errorf("dica presente = %v, queria %v; saída = %q", hinted, test.want, result.stdout)
+			}
+		})
+	}
+}
+
 func TestIgnoreListCommandExpands(t *testing.T) {
 	result := execute(t, populated(), "", "ignore", "list", "--expand")
 

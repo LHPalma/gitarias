@@ -47,9 +47,35 @@ func TestList(t *testing.T) {
 		t.Errorf("primeira = %+v, queria %+v", entries[0], first)
 	}
 
-	second := Entry{Source: ".git/info/exclude", Line: 1, Pattern: "local-only/", Path: "local-only/"}
+	second := Entry{
+		Source:    ".git/info/exclude",
+		Line:      1,
+		Pattern:   "local-only/",
+		Path:      "local-only/",
+		Directory: true,
+	}
 	if entries[1] != second {
 		t.Errorf("segunda = %+v, queria %+v", entries[1], second)
+	}
+}
+
+func TestListMarksTheCollapsedDirectory(t *testing.T) {
+	runner := gittest.NewRunner(inspected(
+		"app.log\x00node_modules/\x00",
+		".gitignore\x002\x00*.log\x00app.log\x00"+
+			".gitignore\x001\x00node_modules/\x00node_modules/\x00",
+	))
+
+	entries, err := NewRepo(runner).List(false)
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+
+	if entries[0].Directory {
+		t.Errorf("%q e arquivo e nao pode ser marcado como diretorio", entries[0].Path)
+	}
+	if !entries[1].Directory {
+		t.Errorf("%q colapsou um diretorio e a barra final e a prova", entries[1].Path)
 	}
 }
 
