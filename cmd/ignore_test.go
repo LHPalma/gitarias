@@ -224,6 +224,100 @@ func TestIgnoreListCommandPropagatesWriteFailure(t *testing.T) {
 	}
 }
 
+const bom = "\ufeff"
+
+func TestIgnoreListCommandCSV(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "csv")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+
+	want := bom +
+		".gitignore,2,*.log,app.log\n" +
+		".gitignore,1,node_modules/,node_modules/\n" +
+		".git/info/exclude,4,relat*.csv,relatório 2026.csv\n"
+
+	if result.stdout != want {
+		t.Errorf("saída:\n%q\nqueria:\n%q", result.stdout, want)
+	}
+	if result.stderr != "" {
+		t.Errorf("RN-09: stderr deveria estar vazio, veio %q", result.stderr)
+	}
+}
+
+func TestIgnoreListCommandCSVCarriesNoDecoration(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "csv")
+
+	for _, decoration := range []string{"Ignorados (", "CAMINHO", "ORIGEM", "PADRÃO", "--expand"} {
+		if strings.Contains(result.stdout, decoration) {
+			t.Errorf("saída = %q, %q é enfeite de texto e corromperia o csv", result.stdout, decoration)
+		}
+	}
+}
+
+func TestIgnoreListCommandCSVWithAnotherSeparator(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "csv", "--separator", ";")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, ".gitignore;2;*.log;app.log") {
+		t.Errorf("saída = %q, queria o ponto e vírgula", result.stdout)
+	}
+}
+
+func TestIgnoreListCommandRefusesSeparatorOutsideCSV(t *testing.T) {
+	for _, chosen := range []string{"text"} {
+		t.Run("recusa com "+chosen, func(t *testing.T) {
+			result := execute(t, populated(), "", "ignore", "list", "--format", chosen, "--separator", ";")
+
+			if result.err == nil {
+				t.Fatal("flag setada de propósito e descartada calada é o pior modo de falha")
+			}
+			if result.stdout != "" {
+				t.Errorf("RN-09: nada pode ir para o stdout, veio %q", result.stdout)
+			}
+		})
+	}
+}
+
+func TestIgnoreListCommandRefusesSeparatorOutsideTheClosedSet(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "csv", "--separator", ":")
+
+	if result.err == nil {
+		t.Fatal("o conjunto é fechado; dois-pontos tem de virar erro")
+	}
+	if result.stdout != "" {
+		t.Errorf("RN-09: nada pode ir para o stdout, veio %q", result.stdout)
+	}
+}
+
+func TestIgnoreListCommandRefusesUnknownFormat(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "yaml")
+
+	if result.err == nil {
+		t.Fatal("formato desconhecido tem de virar erro")
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a validação da flag vem antes de tocar no git", result.calls)
+	}
+}
+
+func TestIgnoreListCommandCSVWithNothingIgnored(t *testing.T) {
+	responses := ignoring("inexistente\x00", "")
+	responses["check-ignore -z --stdin -v"] = gittest.Response{Err: &git.ExitError{Code: 1, Message: ""}}
+
+	result := execute(t, responses, "", "ignore", "list", "--format", "csv")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if result.stdout != bom {
+		t.Errorf("saída = %q, sem linha só o BOM sai", result.stdout)
+	}
+}
+
 func TestIgnoreListCommandTakesNoArguments(t *testing.T) {
 	result := execute(t, populated(), "", "ignore", "list", "sobrando")
 
