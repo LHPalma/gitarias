@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -268,7 +269,7 @@ func TestIgnoreListCommandCSVWithAnotherSeparator(t *testing.T) {
 }
 
 func TestIgnoreListCommandRefusesSeparatorOutsideCSV(t *testing.T) {
-	for _, chosen := range []string{"text", "tsv"} {
+	for _, chosen := range []string{"json", "text", "tsv"} {
 		t.Run("recusa com "+chosen, func(t *testing.T) {
 			result := execute(t, populated(), "", "ignore", "list", "--format", chosen, "--separator", ";")
 
@@ -374,5 +375,41 @@ func TestIgnoreListCommandSuggestsTSVOnStderr(t *testing.T) {
 	}
 	if !strings.HasPrefix(result.stdout, bom+".gitignore\t2\t") {
 		t.Errorf("saída = %q, o csv pedido continua saindo inteiro", result.stdout)
+	}
+}
+
+func TestIgnoreListCommandJSON(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "json")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+
+	var records []ignoredRecord
+	if err := json.Unmarshal([]byte(result.stdout), &records); err != nil {
+		t.Fatalf("a saída tem de ser json válido, veio %q: %v", result.stdout, err)
+	}
+
+	if len(records) != 3 {
+		t.Fatalf("registros = %v, queria os três", records)
+	}
+
+	first := ignoredRecord{Source: ".gitignore", Line: 2, Pattern: "*.log", Path: "app.log"}
+	if records[0] != first {
+		t.Errorf("primeiro = %+v, queria %+v", records[0], first)
+	}
+}
+
+func TestIgnoreListCommandJSONWithNothingIgnored(t *testing.T) {
+	responses := ignoring("inexistente\x00", "")
+	responses["check-ignore -z --stdin -v"] = gittest.Response{Err: &git.ExitError{Code: 1, Message: ""}}
+
+	result := execute(t, responses, "", "ignore", "list", "--format", "json")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if result.stdout != "[]\n" {
+		t.Errorf("saída = %q, queria a lista vazia e nunca a frase em português", result.stdout)
 	}
 }

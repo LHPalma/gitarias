@@ -40,7 +40,7 @@ func newIgnoreListCommand(runner Runner) *cobra.Command {
 	}
 
 	command.Flags().BoolVar(&options.expand, "expand", false, "lista arquivo a arquivo em vez de colapsar o diretório ignorado")
-	command.Flags().StringVar(&options.format, "format", string(format.Text), "formato da saída: text, csv ou tsv")
+	command.Flags().StringVar(&options.format, "format", string(format.Text), "formato da saída: text, csv, tsv ou json")
 	command.Flags().StringVar(&options.separator, "separator", string(format.Comma), "separador do csv: , ; | ou \\t")
 
 	return command
@@ -94,11 +94,14 @@ func resolveSeparator(command *cobra.Command, chosen format.Format, options igno
 }
 
 func render(output io.Writer, chosen format.Format, separator format.Separator, expand bool, entries []ignore.Entry) error {
-	if chosen == format.CSV || chosen == format.TSV {
+	switch chosen {
+	case format.CSV, format.TSV:
 		return format.WriteCSV(output, separator, ignoredRows(entries))
+	case format.JSON:
+		return format.WriteJSON(output, ignoredRecords(entries))
+	default:
+		return renderIgnoredText(output, expand, entries)
 	}
-
-	return renderIgnoredText(output, expand, entries)
 }
 
 func ignoredRows(entries []ignore.Entry) [][]string {
@@ -108,6 +111,20 @@ func ignoredRows(entries []ignore.Entry) [][]string {
 	}
 
 	return rows
+}
+
+func ignoredRecords(entries []ignore.Entry) []ignoredRecord {
+	records := make([]ignoredRecord, 0, len(entries))
+	for _, entry := range entries {
+		records = append(records, ignoredRecord{
+			Source:  entry.Source,
+			Line:    entry.Line,
+			Pattern: entry.Pattern,
+			Path:    entry.Path,
+		})
+	}
+
+	return records
 }
 
 func renderIgnoredText(output io.Writer, expand bool, entries []ignore.Entry) error {

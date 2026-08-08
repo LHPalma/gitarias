@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-var offered = []string{"text", "csv", "tsv"}
+var offered = []string{"text", "csv", "tsv", "json"}
 
 func TestParse(t *testing.T) {
 	for _, name := range offered {
