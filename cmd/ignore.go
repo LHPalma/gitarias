@@ -40,7 +40,7 @@ func newIgnoreListCommand(runner Runner) *cobra.Command {
 	}
 
 	command.Flags().BoolVar(&options.expand, "expand", false, "lista arquivo a arquivo em vez de colapsar o diretório ignorado")
-	command.Flags().StringVar(&options.format, "format", string(format.Text), "formato da saída: text ou csv")
+	command.Flags().StringVar(&options.format, "format", string(format.Text), "formato da saída: text, csv ou tsv")
 	command.Flags().StringVar(&options.separator, "separator", string(format.Comma), "separador do csv: , ; | ou \\t")
 
 	return command
@@ -71,6 +71,9 @@ func runIgnoreList(command *cobra.Command, repo *ignore.Repo, options ignoreList
 
 func resolveSeparator(command *cobra.Command, chosen format.Format, options ignoreListOptions) (format.Separator, error) {
 	if !command.Flags().Changed("separator") {
+		if chosen == format.TSV {
+			return format.Tab, nil
+		}
 		return format.Comma, nil
 	}
 
@@ -78,11 +81,20 @@ func resolveSeparator(command *cobra.Command, chosen format.Format, options igno
 		return 0, fmt.Errorf("--separator só vale com --format csv, e veio --format %s", chosen)
 	}
 
-	return format.ParseSeparator(options.separator)
+	separator, err := format.ParseSeparator(options.separator)
+	if err != nil {
+		return 0, err
+	}
+
+	if separator == format.Tab {
+		fmt.Fprintln(command.ErrOrStderr(), "aviso: csv com tabulação é o que --format tsv já faz")
+	}
+
+	return separator, nil
 }
 
 func render(output io.Writer, chosen format.Format, separator format.Separator, expand bool, entries []ignore.Entry) error {
-	if chosen == format.CSV {
+	if chosen == format.CSV || chosen == format.TSV {
 		return format.WriteCSV(output, separator, ignoredRows(entries))
 	}
 

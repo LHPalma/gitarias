@@ -268,7 +268,7 @@ func TestIgnoreListCommandCSVWithAnotherSeparator(t *testing.T) {
 }
 
 func TestIgnoreListCommandRefusesSeparatorOutsideCSV(t *testing.T) {
-	for _, chosen := range []string{"text"} {
+	for _, chosen := range []string{"text", "tsv"} {
 		t.Run("recusa com "+chosen, func(t *testing.T) {
 			result := execute(t, populated(), "", "ignore", "list", "--format", chosen, "--separator", ";")
 
@@ -337,5 +337,42 @@ func TestIgnoreCommandWithoutSubcommandNeverTouchesTheRepository(t *testing.T) {
 	}
 	if !strings.Contains(result.stdout, "list") {
 		t.Errorf("saída = %q, a ajuda tem de nomear o subcomando", result.stdout)
+	}
+}
+
+func TestIgnoreListCommandTSV(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "tsv")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+
+	want := bom +
+		".gitignore\t2\t*.log\tapp.log\n" +
+		".gitignore\t1\tnode_modules/\tnode_modules/\n" +
+		".git/info/exclude\t4\trelat*.csv\trelatório 2026.csv\n"
+
+	if result.stdout != want {
+		t.Errorf("saída:\n%q\nqueria:\n%q", result.stdout, want)
+	}
+	if result.stderr != "" {
+		t.Errorf("tsv é o caminho oficial da tabulação e não pode avisar nada, veio %q", result.stderr)
+	}
+}
+
+func TestIgnoreListCommandSuggestsTSVOnStderr(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "csv", "--separator", "\\t")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stderr, "tsv") {
+		t.Errorf("stderr = %q, queria a sugestão de --format tsv", result.stderr)
+	}
+	if strings.Contains(result.stdout, "tsv") {
+		t.Errorf("RN-09: a sugestão no stdout entraria no meio do csv, veio %q", result.stdout)
+	}
+	if !strings.HasPrefix(result.stdout, bom+".gitignore\t2\t") {
+		t.Errorf("saída = %q, o csv pedido continua saindo inteiro", result.stdout)
 	}
 }
