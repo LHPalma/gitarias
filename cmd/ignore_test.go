@@ -9,6 +9,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/LHPalma/gitarias/internal/format"
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/git/gittest"
 )
@@ -236,7 +237,7 @@ func TestIgnoreListCommandCSV(t *testing.T) {
 		t.Fatalf("não esperava erro, veio %v", result.err)
 	}
 
-	want := bom +
+	want := "" +
 		".gitignore,2,*.log,app.log\n" +
 		".gitignore,1,node_modules/,node_modules/\n" +
 		".git/info/exclude,4,relat*.csv,relatório 2026.csv\n"
@@ -252,7 +253,7 @@ func TestIgnoreListCommandCSV(t *testing.T) {
 func TestIgnoreListCommandCSVCarriesNoDecoration(t *testing.T) {
 	result := execute(t, populated(), "", "ignore", "list", "--format", "csv")
 
-	for _, decoration := range []string{"Ignorados (", "CAMINHO", "ORIGEM", "PADRÃO", "--expand"} {
+	for _, decoration := range []string{"Ignorados (", "CAMINHO", "ORIGEM", "PADRÃO", "--expand", bom} {
 		if strings.Contains(result.stdout, decoration) {
 			t.Errorf("saída = %q, %q é enfeite de texto e corromperia o csv", result.stdout, decoration)
 		}
@@ -316,8 +317,8 @@ func TestIgnoreListCommandCSVWithNothingIgnored(t *testing.T) {
 	if result.err != nil {
 		t.Fatalf("não esperava erro, veio %v", result.err)
 	}
-	if result.stdout != bom {
-		t.Errorf("saída = %q, sem linha só o BOM sai", result.stdout)
+	if result.stdout != "" {
+		t.Errorf("saída = %q, sem linha nada sai", result.stdout)
 	}
 }
 
@@ -350,7 +351,7 @@ func TestIgnoreListCommandTSV(t *testing.T) {
 		t.Fatalf("não esperava erro, veio %v", result.err)
 	}
 
-	want := bom +
+	want := "" +
 		".gitignore\t2\t*.log\tapp.log\n" +
 		".gitignore\t1\tnode_modules/\tnode_modules/\n" +
 		".git/info/exclude\t4\trelat*.csv\trelatório 2026.csv\n"
@@ -375,7 +376,7 @@ func TestIgnoreListCommandSuggestsTSVOnStderr(t *testing.T) {
 	if strings.Contains(result.stdout, "tsv") {
 		t.Errorf("RN-09: a sugestão no stdout entraria no meio do csv, veio %q", result.stdout)
 	}
-	if !strings.HasPrefix(result.stdout, bom+".gitignore\t2\t") {
+	if !strings.HasPrefix(result.stdout, ".gitignore\t2\t") {
 		t.Errorf("saída = %q, o csv pedido continua saindo inteiro", result.stdout)
 	}
 }
@@ -441,7 +442,7 @@ func TestIgnoreListCommandWritesTheFile(t *testing.T) {
 		t.Fatalf("o arquivo tinha de existir com a extensão do formato: %v", err)
 	}
 	if !strings.HasPrefix(string(content), bom) {
-		t.Errorf("conteúdo = %q, queria o BOM também no arquivo", content)
+		t.Errorf("conteúdo = %q, o arquivo é o destino que o Excel abre e precisa do BOM", content)
 	}
 	if !strings.Contains(string(content), "app.log") {
 		t.Errorf("conteúdo = %q, queria as linhas", content)
@@ -468,5 +469,60 @@ func TestIgnoreListCommandPropagatesTheFileFailure(t *testing.T) {
 
 	if result.err == nil {
 		t.Fatal("diretório inexistente tem de virar erro")
+	}
+}
+
+func TestIgnoreListCommandKeepsTheByteOrderMarkOffThePipe(t *testing.T) {
+	for _, chosen := range []string{"csv", "tsv"} {
+		t.Run(chosen, func(t *testing.T) {
+			result := execute(t, populated(), "", "ignore", "list", "--format", chosen)
+
+			if result.err != nil {
+				t.Fatalf("não esperava erro, veio %v", result.err)
+			}
+			if !strings.Contains(result.stdout, "app.log") {
+				t.Fatalf("a listagem tem de sair, senão o teste passa de graça; veio %q", result.stdout)
+			}
+			if strings.Contains(result.stdout, bom) {
+				t.Errorf("saída = %q, no stdout o BOM gruda no primeiro campo de quem parseia", result.stdout)
+			}
+		})
+	}
+}
+
+func TestRenderForFilePropagatesTheByteOrderMarkFailure(t *testing.T) {
+	err := renderForFile(brokenWriter{}, format.CSV, format.Comma, false, nil)
+
+	if err == nil {
+		t.Fatal("falha logo no BOM tem de virar erro em vez de seguir gravando")
+	}
+	if !strings.Contains(err.Error(), "disco cheio") {
+		t.Errorf("erro = %v, queria o da escrita", err)
+	}
+}
+
+func TestRenderForFileMarksOnlyTheDelimitedFormats(t *testing.T) {
+	tests := []struct {
+		chosen format.Format
+		want   bool
+	}{
+		{chosen: format.CSV, want: true},
+		{chosen: format.TSV, want: true},
+		{chosen: format.JSON},
+		{chosen: format.Text},
+	}
+
+	for _, test := range tests {
+		t.Run(string(test.chosen), func(t *testing.T) {
+			output := &bytes.Buffer{}
+
+			if err := renderForFile(output, test.chosen, format.Comma, false, nil); err != nil {
+				t.Fatalf("não esperava erro, veio %v", err)
+			}
+
+			if marked := strings.HasPrefix(output.String(), bom); marked != test.want {
+				t.Errorf("BOM presente = %v, queria %v; saída = %q", marked, test.want, output.String())
+			}
+		})
 	}
 }

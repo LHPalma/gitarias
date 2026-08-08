@@ -83,8 +83,18 @@ func renderToFile(path string, chosen format.Format, separator format.Separator,
 	}
 
 	return writeAndClose(file, func(output io.Writer) error {
-		return render(output, chosen, separator, expand, entries)
+		return renderForFile(output, chosen, separator, expand, entries)
 	})
+}
+
+func renderForFile(output io.Writer, chosen format.Format, separator format.Separator, expand bool, entries []ignore.Entry) error {
+	if chosen.Delimited() {
+		if err := format.WriteByteOrderMark(output); err != nil {
+			return err
+		}
+	}
+
+	return render(output, chosen, separator, expand, entries)
 }
 
 func resolveSeparator(command *cobra.Command, chosen format.Format, options ignoreListOptions) (format.Separator, error) {
@@ -112,10 +122,10 @@ func resolveSeparator(command *cobra.Command, chosen format.Format, options igno
 }
 
 func render(output io.Writer, chosen format.Format, separator format.Separator, expand bool, entries []ignore.Entry) error {
-	switch chosen {
-	case format.CSV, format.TSV:
+	switch {
+	case chosen.Delimited():
 		return format.WriteCSV(output, separator, ignoredRows(entries))
-	case format.JSON:
+	case chosen == format.JSON:
 		return format.WriteJSON(output, ignoredRecords(entries))
 	default:
 		return renderIgnoredText(output, expand, entries)

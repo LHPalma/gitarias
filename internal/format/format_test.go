@@ -87,3 +87,23 @@ func TestPath(t *testing.T) {
 		})
 	}
 }
+
+func TestDelimited(t *testing.T) {
+	tests := []struct {
+		chosen Format
+		want   bool
+	}{
+		{chosen: CSV, want: true},
+		{chosen: TSV, want: true},
+		{chosen: Text},
+		{chosen: JSON},
+	}
+
+	for _, test := range tests {
+		t.Run(string(test.chosen), func(t *testing.T) {
+			if got := test.chosen.Delimited(); got != test.want {
+				t.Errorf("delimitado = %v, queria %v", got, test.want)
+			}
+		})
+	}
+}

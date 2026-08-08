@@ -43,3 +43,7 @@ func (chosen Format) Path(path string) string {
 
 	return path + chosen.Extension()
 }
+
+func (chosen Format) Delimited() bool {
+	return chosen == CSV || chosen == TSV
+}

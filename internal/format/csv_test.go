@@ -7,15 +7,33 @@ import (
 	"testing"
 )
 
-func TestWriteCSVStartsWithTheByteOrderMark(t *testing.T) {
+func TestWriteByteOrderMark(t *testing.T) {
 	output := &bytes.Buffer{}
 
-	if err := WriteCSV(output, Comma, [][]string{{"relatório 2026.csv"}}); err != nil {
+	if err := WriteByteOrderMark(output); err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
 
-	if !bytes.HasPrefix(output.Bytes(), []byte{0xEF, 0xBB, 0xBF}) {
-		t.Fatalf("bytes = %v, queria o BOM na frente; sem ele o Excel le relatÃ³rio", output.Bytes()[:3])
+	if !bytes.Equal(output.Bytes(), []byte{0xEF, 0xBB, 0xBF}) {
+		t.Fatalf("bytes = %v, queria os tres do BOM; sem eles o Excel le relatÃ³rio", output.Bytes())
+	}
+}
+
+func TestWriteByteOrderMarkPropagatesTheWriteError(t *testing.T) {
+	if err := WriteByteOrderMark(brokenWriter{}); err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+}
+
+func TestWriteCSVLeavesTheByteOrderMarkOut(t *testing.T) {
+	output := &bytes.Buffer{}
+
+	if err := WriteCSV(output, Comma, [][]string{{"a"}}); err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+
+	if output.String() != "a\n" {
+		t.Errorf("saida = %q, o BOM e do destino e nao do formato; num pipe ele gruda no primeiro campo", output.String())
 	}
 }
 
@@ -39,7 +57,7 @@ func TestWriteCSVHonoursTheSeparator(t *testing.T) {
 				t.Fatalf("nao esperava erro, veio %v", err)
 			}
 
-			if got := strings.TrimPrefix(output.String(), byteOrderMark); got != test.want {
+			if got := output.String(); got != test.want {
 				t.Errorf("saida = %q, queria %q", got, test.want)
 			}
 		})
@@ -53,7 +71,7 @@ func TestWriteCSVQuotesTheSeparatorInsideAField(t *testing.T) {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
 
-	got := strings.TrimPrefix(output.String(), byteOrderMark)
+	got := output.String()
 	if got != "\"relat;orio\";b\n" {
 		t.Errorf("saida = %q, o separador dentro do campo tem de sair citado", got)
 	}
@@ -66,8 +84,8 @@ func TestWriteCSVWithoutRows(t *testing.T) {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
 
-	if output.String() != byteOrderMark {
-		t.Errorf("saida = %q, sem linha so o BOM sai", output.String())
+	if output.String() != "" {
+		t.Errorf("saida = %q, sem linha nada sai", output.String())
 	}
 }
 
