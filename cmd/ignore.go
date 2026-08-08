@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 
 	"github.com/LHPalma/gitarias/internal/format"
@@ -90,7 +89,7 @@ func runIgnoreList(command *cobra.Command, repo *ignore.Repo, options ignoreList
 }
 
 func renderToFile(path string, rendering ignoredRendering, entries []ignore.Entry) error {
-	file, err := os.Create(path)
+	file, err := createFile(path)
 	if err != nil {
 		return err
 	}
