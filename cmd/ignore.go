@@ -44,7 +44,7 @@ func newIgnoreListCommand(runner Runner) *cobra.Command {
 	command.Flags().BoolVar(&options.expand, "expand", false, "lista arquivo a arquivo em vez de colapsar o diretório ignorado")
 	command.Flags().StringVar(&options.format, "format", string(format.Text), "formato da saída: text, csv, tsv ou json")
 	command.Flags().BoolVar(&options.noHeader, "no-header", false, "com csv ou tsv, omite a linha de nomes das colunas")
-	command.Flags().StringVar(&options.output, "output", "", "grava num arquivo em vez do stdout; sem extensão, a do formato é acrescentada")
+	command.Flags().StringVar(&options.output, "output", "", "caminho do arquivo a gravar, relativo ou absoluto, em vez do stdout; sem extensão, a do formato é acrescentada")
 	command.Flags().StringVar(&options.separator, "separator", string(format.Comma), "separador do csv: , ; | ou \\t")
 
 	return command

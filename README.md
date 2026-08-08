@@ -149,7 +149,7 @@ Diretório ignorado conta como uma linha só. Use --expand para listar arquivo a
 |---|---|---|
 | `--expand` | `false` | Lista arquivo a arquivo em vez de colapsar o diretório |
 | `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
-| `--output <arq>` | vazio | Grava em arquivo; sem extensão, a do formato é acrescentada |
+| `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
 | `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
 | `--no-header` | `false` | Só com `csv` ou `tsv`. Omite a linha de nomes das colunas |
 
@@ -179,11 +179,35 @@ origem,linha,padrão,caminho
 .gitignore,4,relat*.csv,relatório 2026.csv
 ```
 
-O `--output` grava em arquivo em vez do `stdout`, e é só nesse caso que sai o
-BOM UTF-8 na frente — sem ele o Excel em português lê `relatório` como
-`relatÃ³rio`, mas num pipe os três bytes grudariam no primeiro campo e sujariam
-quem for parsear. Para abrir no Excel em português, `--separator ';'` costuma
-ser o par que falta.
+**O `--output` recebe um caminho, não só um nome.** Relativo ou absoluto,
+dentro ou fora do repositório:
+
+```bash
+gtr ignore list --format csv  --output ignorados             # ./ignorados.csv
+gtr ignore list --format json --output /tmp/ignorados.json   # absoluto
+gtr ignore list --format tsv  --output ../fora-do-repo       # ../fora-do-repo.tsv
+
+mkdir -p relatorios/2026                                     # o diretório tem de existir
+gtr ignore list --format csv  --output relatorios/2026/ign   # relatorios/2026/ign.csv
+```
+
+A extensão do formato é acrescentada **só quando falta**. Se você deu uma, ela
+é respeitada, mesmo não batendo com o formato — a ferramenta não renomeia o que
+você nomeou.
+
+O `gtr` não cria árvore de diretórios por conta própria; quando falta um, ele
+diz qual. E caminho terminado em `/` é recusado, porque nomeia um diretório e
+não um arquivo:
+
+```
+$ gtr ignore list --format csv --output relatorios/
+erro: "relatorios/" nomeia um diretório; informe o caminho do arquivo, como "relatorios/ignorados.csv"
+```
+
+**Só o arquivo leva o BOM UTF-8 na frente.** Sem ele o Excel em português lê
+`relatório` como `relatÃ³rio`; num pipe, porém, os três bytes grudariam no
+primeiro campo e sujariam quem for parsear. Para abrir no Excel em português,
+`--separator ';'` costuma ser o par que falta.
 
 ## O que a ferramenta nunca faz
 
