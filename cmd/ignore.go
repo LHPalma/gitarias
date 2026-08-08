@@ -78,6 +78,7 @@ func printIgnored(output io.Writer, entries []ignore.Entry) error {
 	fmt.Fprintf(output, "Ignorados (%d):\n", len(entries))
 
 	writer := columns(output)
+	fmt.Fprintln(writer, "  CAMINHO\tORIGEM\tPADRÃO")
 	for _, entry := range entries {
 		fmt.Fprintf(writer, "  %s\t%s:%d\t%s\n", entry.Path, entry.Source, entry.Line, entry.Pattern)
 	}

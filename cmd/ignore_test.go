@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/git/gittest"
@@ -35,6 +36,7 @@ func TestIgnoreListCommandLists(t *testing.T) {
 	}
 
 	want := "Ignorados (3):\n" +
+		"  CAMINHO             ORIGEM               PADRÃO\n" +
 		"  app.log             .gitignore:2         *.log\n" +
 		"  node_modules/       .gitignore:1         node_modules/\n" +
 		"  relatório 2026.csv  .git/info/exclude:4  relat*.csv\n" +
@@ -45,6 +47,62 @@ func TestIgnoreListCommandLists(t *testing.T) {
 	}
 	if result.stderr != "" {
 		t.Errorf("RN-09: stderr deveria estar vazio, veio %q", result.stderr)
+	}
+}
+
+func columnOf(line string, cell string) int {
+	index := strings.Index(line, cell)
+	if index < 0 {
+		return -1
+	}
+
+	return utf8.RuneCountInString(line[:index])
+}
+
+func lastColumnOf(line string, cell string) int {
+	index := strings.LastIndex(line, cell)
+	if index < 0 {
+		return -1
+	}
+
+	return utf8.RuneCountInString(line[:index])
+}
+
+func TestIgnoreListCommandNamesTheColumns(t *testing.T) {
+	responses := ignoring("node_modules/\x00", ".gitignore\x001\x00node_modules/\x00node_modules/\x00")
+
+	result := execute(t, responses, "", "ignore", "list")
+
+	lines := strings.Split(result.stdout, "\n")
+	if len(lines) < 3 {
+		t.Fatalf("saída = %q, queria o cabeçalho e ao menos uma entrada", result.stdout)
+	}
+	header, row := lines[1], lines[2]
+
+	if !strings.Contains(row, "node_modules/") {
+		t.Fatalf("a entrada tem de estar na linha 3, senão o resto compara o que não existe; veio %q", row)
+	}
+
+	for _, label := range []string{"CAMINHO", "ORIGEM", "PADRÃO"} {
+		if !strings.Contains(header, label) {
+			t.Errorf("cabeçalho = %q, queria a coluna %s", header, label)
+		}
+	}
+
+	alignments := []struct {
+		label  string
+		wanted int
+	}{
+		{label: "CAMINHO", wanted: columnOf(row, "node_modules/")},
+		{label: "ORIGEM", wanted: columnOf(row, ".gitignore:1")},
+		{label: "PADRÃO", wanted: lastColumnOf(row, "node_modules/")},
+	}
+
+	for _, alignment := range alignments {
+		if got := columnOf(header, alignment.label); got != alignment.wanted {
+			t.Errorf("%s começa na coluna %d e o dado na %d:\n%q\n%q",
+				alignment.label, got, alignment.wanted, header, row)
+		}
 	}
 }
 
