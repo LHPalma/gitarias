@@ -607,3 +607,30 @@ func TestIgnoreListCommandRefusesNoHeaderOutsideTheDelimitedFormats(t *testing.T
 		})
 	}
 }
+
+func TestIgnoreListCommandRefusesADirectoryAsOutput(t *testing.T) {
+	directory := t.TempDir() + string(filepath.Separator)
+
+	result := execute(t, populated(), "", "ignore", "list", "--format", "csv", "--output", directory)
+
+	if result.err == nil {
+		t.Fatal("caminho terminado em separador criaria um arquivo oculto chamado .csv lá dentro")
+	}
+	if !strings.Contains(result.err.Error(), "nomeia um diretório") {
+		t.Errorf("erro = %v, queria a recusa do caminho e não a falha de criação que vem depois", result.err)
+	}
+	if !strings.Contains(result.err.Error(), "ignorados.csv") {
+		t.Errorf("erro = %v, queria o exemplo de caminho válido", result.err)
+	}
+	if result.stdout != "" {
+		t.Errorf("RN-09: nada pode ir para o stdout, veio %q", result.stdout)
+	}
+
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatalf("não consegui ler o diretório: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("o diretório ganhou %d arquivo(s); a recusa tem de vir antes de criar qualquer coisa", len(entries))
+	}
+}

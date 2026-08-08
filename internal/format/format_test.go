@@ -77,14 +77,55 @@ func TestPath(t *testing.T) {
 		{name: "extensao errada nao e corrigida", chosen: JSON, path: "dados.csv", want: "dados.csv"},
 		{name: "caminho com diretorio", chosen: TSV, path: "saida/ignorados", want: "saida/ignorados.tsv"},
 		{name: "diretorio com ponto no meio", chosen: CSV, path: "v1.2/ignorados", want: "v1.2/ignorados.csv"},
+		{name: "caminho absoluto", chosen: JSON, path: "/tmp/dados", want: "/tmp/dados.json"},
+		{name: "caminho para fora do repositorio", chosen: CSV, path: "../ignorados", want: "../ignorados.csv"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := test.chosen.Path(test.path); got != test.want {
+			got, err := test.chosen.Path(test.path)
+			if err != nil {
+				t.Fatalf("nao esperava erro, veio %v", err)
+			}
+			if got != test.want {
 				t.Errorf("caminho = %q, queria %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestPathRefusesWhatNamesADirectory(t *testing.T) {
+	for _, path := range []string{"saida/", "saida/2026/", "/tmp/"} {
+		t.Run("recusa "+path, func(t *testing.T) {
+			got, err := CSV.Path(path)
+
+			if err == nil {
+				t.Fatalf("%q viraria um arquivo oculto chamado .csv dentro do diretorio", path)
+			}
+			if got != "" {
+				t.Errorf("caminho = %q, o recusado nao pode sair utilizavel", got)
+			}
+			if !strings.Contains(err.Error(), path) {
+				t.Errorf("erro = %v, tem de nomear o caminho recusado", err)
+			}
+		})
+	}
+}
+
+func TestPathSuggestsAFileNameWhenRefusing(t *testing.T) {
+	_, err := CSV.Path("saida/")
+
+	if err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(err.Error(), "saida/ignorados.csv") {
+		t.Errorf("erro = %v, queria um exemplo pronto de caminho valido", err)
+	}
+}
+
+func TestPathRefusesTheEmptyPath(t *testing.T) {
+	if _, err := CSV.Path(""); err == nil {
+		t.Fatal("caminho vazio nao nomeia arquivo nenhum")
 	}
 }
 

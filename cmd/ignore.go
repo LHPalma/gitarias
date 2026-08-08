@@ -81,7 +81,12 @@ func runIgnoreList(command *cobra.Command, repo *ignore.Repo, options ignoreList
 		return render(command.OutOrStdout(), rendering, entries)
 	}
 
-	return renderToFile(chosen.Path(options.output), rendering, entries)
+	path, err := chosen.Path(options.output)
+	if err != nil {
+		return err
+	}
+
+	return renderToFile(path, rendering, entries)
 }
 
 func renderToFile(path string, rendering ignoredRendering, entries []ignore.Entry) error {

@@ -2,6 +2,7 @@ package format
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 )
 
@@ -36,12 +37,21 @@ func (chosen Format) Extension() string {
 	}
 }
 
-func (chosen Format) Path(path string) string {
-	if filepath.Ext(path) != "" {
-		return path
+func (chosen Format) Path(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("informe o caminho do arquivo a gravar")
 	}
 
-	return path + chosen.Extension()
+	if os.IsPathSeparator(path[len(path)-1]) {
+		return "", fmt.Errorf("%q nomeia um diretório; informe o caminho do arquivo, como %q",
+			path, path+"ignorados"+chosen.Extension())
+	}
+
+	if filepath.Ext(path) != "" {
+		return path, nil
+	}
+
+	return path + chosen.Extension(), nil
 }
 
 func (chosen Format) Delimited() bool {
