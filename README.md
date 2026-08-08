@@ -128,6 +128,63 @@ Working trees (4):
 No lugar da branch aparece `(bare)` ou `(HEAD destacado em <sha>)` quando não
 houver uma. O comando não tem flags.
 
+### `gtr ignore list`
+
+Lista o que está sendo ignorado e **por qual regra** — pergunta que o git só
+responde compondo dois comandos de plumbing.
+
+```
+$ gtr ignore list
+Ignorados (4):
+  CAMINHO             ORIGEM               PADRÃO
+  app.log             .gitignore:2         *.log
+  local-only/         .git/info/exclude:1  local-only/
+  node_modules/       .gitignore:1         node_modules/
+  relatório 2026.csv  .gitignore:4         relat*.csv
+
+Diretório ignorado conta como uma linha só. Use --expand para listar arquivo a arquivo.
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--expand` | `false` | Lista arquivo a arquivo em vez de colapsar o diretório |
+| `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
+| `--output <arq>` | vazio | Grava em arquivo; sem extensão, a do formato é acrescentada |
+| `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
+| `--no-header` | `false` | Só com `csv` ou `tsv`. Omite a linha de nomes das colunas |
+
+**A coluna `ORIGEM` é o ponto do comando.** Três arquivos diferentes podem
+estar ignorando algo, e eles não significam a mesma coisa: `.gitignore` é
+convenção do time e vale para todo mundo, `.git/info/exclude` vale só no seu
+clone, e o `core.excludesFile` vale em todos os repositórios da sua máquina.
+Sem essa coluna, "por que esse arquivo está sendo ignorado" continua sem
+resposta.
+
+**Diretório inteiramente ignorado sai como uma linha.** Sem isso, um
+repositório com `node_modules` cospe centenas de milhares de linhas. O
+`--expand` abre.
+
+**Arquivo já rastreado não aparece**, mesmo casando com uma regra — o git
+continua rastreando quem já estava dentro. É a confusão número um do
+`.gitignore`, e vale saber ao procurar algo que "deveria ter sumido".
+
+**Para script e para planilha:**
+
+```
+$ gtr ignore list --format csv
+origem,linha,padrão,caminho
+.gitignore,2,*.log,app.log
+.git/info/exclude,1,local-only/,local-only/
+.gitignore,1,node_modules/,node_modules/
+.gitignore,4,relat*.csv,relatório 2026.csv
+```
+
+O `--output` grava em arquivo em vez do `stdout`, e é só nesse caso que sai o
+BOM UTF-8 na frente — sem ele o Excel em português lê `relatório` como
+`relatÃ³rio`, mas num pipe os três bytes grudariam no primeiro campo e sujariam
+quem for parsear. Para abrir no Excel em português, `--separator ';'` costuma
+ser o par que falta.
+
 ## O que a ferramenta nunca faz
 
 Estas não são configurações — são propriedades do código:
@@ -171,9 +228,10 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 
 ## Estado
 
-Os comandos `branches` e `worktrees` estão no ar. Planejados: seleção
-interativa de quais branches apagar, `stats`, `changelog`, `gtr ignore`,
-saída em CSV/JSON e arquivo de configuração opcional.
+Os comandos `branches`, `worktrees` e `ignore list` estão no ar. Planejados:
+seleção interativa de quais branches apagar, `gtr ignore add`, `stats`,
+`changelog` e arquivo de configuração opcional. O `--format` existe hoje só no
+`ignore list`; o `branches` e o `worktrees` ainda não o adotaram.
 
 ## Contribuindo
 
