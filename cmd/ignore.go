@@ -133,7 +133,8 @@ func render(output io.Writer, chosen format.Format, separator format.Separator, 
 }
 
 func ignoredRows(entries []ignore.Entry) [][]string {
-	rows := make([][]string, 0, len(entries))
+	rows := make([][]string, 0, len(entries)+1)
+	rows = append(rows, []string{"origem", "linha", "padrão", "caminho"})
 	for _, entry := range entries {
 		rows = append(rows, []string{entry.Source, strconv.Itoa(entry.Line), entry.Pattern, entry.Path})
 	}

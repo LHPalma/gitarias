@@ -237,7 +237,7 @@ func TestIgnoreListCommandCSV(t *testing.T) {
 		t.Fatalf("não esperava erro, veio %v", result.err)
 	}
 
-	want := "" +
+	want := "origem,linha,padrão,caminho\n" +
 		".gitignore,2,*.log,app.log\n" +
 		".gitignore,1,node_modules/,node_modules/\n" +
 		".git/info/exclude,4,relat*.csv,relatório 2026.csv\n"
@@ -317,8 +317,8 @@ func TestIgnoreListCommandCSVWithNothingIgnored(t *testing.T) {
 	if result.err != nil {
 		t.Fatalf("não esperava erro, veio %v", result.err)
 	}
-	if result.stdout != "" {
-		t.Errorf("saída = %q, sem linha nada sai", result.stdout)
+	if result.stdout != "origem,linha,padrão,caminho\n" {
+		t.Errorf("saída = %q, sem entrada o cabeçalho sozinho já diz o esquema", result.stdout)
 	}
 }
 
@@ -351,7 +351,7 @@ func TestIgnoreListCommandTSV(t *testing.T) {
 		t.Fatalf("não esperava erro, veio %v", result.err)
 	}
 
-	want := "" +
+	want := "origem\tlinha\tpadrão\tcaminho\n" +
 		".gitignore\t2\t*.log\tapp.log\n" +
 		".gitignore\t1\tnode_modules/\tnode_modules/\n" +
 		".git/info/exclude\t4\trelat*.csv\trelatório 2026.csv\n"
@@ -376,7 +376,7 @@ func TestIgnoreListCommandSuggestsTSVOnStderr(t *testing.T) {
 	if strings.Contains(result.stdout, "tsv") {
 		t.Errorf("RN-09: a sugestão no stdout entraria no meio do csv, veio %q", result.stdout)
 	}
-	if !strings.HasPrefix(result.stdout, ".gitignore\t2\t") {
+	if !strings.Contains(result.stdout, ".gitignore\t2\t") {
 		t.Errorf("saída = %q, o csv pedido continua saindo inteiro", result.stdout)
 	}
 }
@@ -524,5 +524,18 @@ func TestRenderForFileMarksOnlyTheDelimitedFormats(t *testing.T) {
 				t.Errorf("BOM presente = %v, queria %v; saída = %q", marked, test.want, output.String())
 			}
 		})
+	}
+}
+
+func TestIgnoreListCommandNamesTheCSVColumns(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "csv")
+
+	header, _, found := strings.Cut(result.stdout, "\n")
+	if !found {
+		t.Fatalf("saída = %q, queria ao menos uma quebra de linha", result.stdout)
+	}
+
+	if header != "origem,linha,padrão,caminho" {
+		t.Errorf("cabeçalho = %q, queria os quatro nomes de coluna", header)
 	}
 }
