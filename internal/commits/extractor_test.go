@@ -2,6 +2,7 @@ package commits
 
 import (
 	"archive/tar"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -195,7 +196,7 @@ type archivingRunner struct {
 	t       *testing.T
 }
 
-func (runner *archivingRunner) Run(args ...string) (string, error) {
+func (runner *archivingRunner) Run(ctx context.Context, args ...string) (string, error) {
 	runner.calls = append(runner.calls, strings.Join(args, " "))
 	if runner.err != nil {
 		return "", runner.err
@@ -214,7 +215,7 @@ func TestArchiveExtractorLandsTheTree(t *testing.T) {
 	runner := &archivingRunner{t: t, entries: []entry{{name: "main.go", body: "package main\n"}}}
 	destination := filepath.Join(t.TempDir(), "arvore")
 
-	if err := NewArchiveExtractor(runner).Extract("abc123", destination); err != nil {
+	if err := NewArchiveExtractor(runner).Extract(t.Context(), "abc123", destination); err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
 
@@ -234,7 +235,7 @@ func TestArchiveExtractorRemovesTheIntermediateArchive(t *testing.T) {
 	workspace := t.TempDir()
 	destination := filepath.Join(workspace, "arvore")
 
-	if err := NewArchiveExtractor(runner).Extract("abc123", destination); err != nil {
+	if err := NewArchiveExtractor(runner).Extract(t.Context(), "abc123", destination); err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
 
@@ -246,7 +247,7 @@ func TestArchiveExtractorRemovesTheIntermediateArchive(t *testing.T) {
 func TestArchiveExtractorPropagatesTheGitFailure(t *testing.T) {
 	runner := &archivingRunner{t: t, err: errors.New("fatal: not a valid object name")}
 
-	err := NewArchiveExtractor(runner).Extract("abc123", filepath.Join(t.TempDir(), "arvore"))
+	err := NewArchiveExtractor(runner).Extract(t.Context(), "abc123", filepath.Join(t.TempDir(), "arvore"))
 
 	if err == nil {
 		t.Fatal("sha invalido tem de virar erro")
@@ -256,7 +257,7 @@ func TestArchiveExtractorPropagatesTheGitFailure(t *testing.T) {
 func TestArchiveExtractorReleasesNothing(t *testing.T) {
 	runner := &archivingRunner{t: t}
 
-	NewArchiveExtractor(runner).Release("/qualquer/lugar")
+	NewArchiveExtractor(runner).Release(t.Context(), "/qualquer/lugar")
 
 	if len(runner.calls) != 0 {
 		t.Errorf("chamadas = %v; o archive nao deixa nada no repositorio para soltar", runner.calls)
@@ -271,10 +272,10 @@ func TestWorktreeExtractorAddsAndRemoves(t *testing.T) {
 	runner := gittest.NewRunner(responses)
 	extractor := NewWorktreeExtractor(runner)
 
-	if err := extractor.Extract("abc123", "/tmp/arvore"); err != nil {
+	if err := extractor.Extract(t.Context(), "abc123", "/tmp/arvore"); err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
-	extractor.Release("/tmp/arvore")
+	extractor.Release(t.Context(), "/tmp/arvore")
 
 	if len(runner.Calls) != 2 {
 		t.Fatalf("chamadas = %v, queria o add e o remove", runner.Calls)
@@ -287,7 +288,7 @@ func TestWorktreeExtractorAddsAndRemoves(t *testing.T) {
 func TestWorktreeExtractorPropagatesTheFailure(t *testing.T) {
 	runner := gittest.NewRunner(map[string]gittest.Response{})
 
-	if err := NewWorktreeExtractor(runner).Extract("abc123", "/tmp/arvore"); err == nil {
+	if err := NewWorktreeExtractor(runner).Extract(t.Context(), "abc123", "/tmp/arvore"); err == nil {
 		t.Fatal("falha do git tem de virar erro")
 	}
 }
@@ -361,7 +362,7 @@ func TestArchiveExtractorPropagatesTheDestinationItCannotCreate(t *testing.T) {
 		t.Fatalf("nao consegui montar o cenario: %v", err)
 	}
 
-	err := NewArchiveExtractor(&archivingRunner{t: t}).Extract("abc", filepath.Join(obstacle, "arvore"))
+	err := NewArchiveExtractor(&archivingRunner{t: t}).Extract(t.Context(), "abc", filepath.Join(obstacle, "arvore"))
 
 	if err == nil {
 		t.Fatal("destino que nao pode ser criado tem de virar erro")

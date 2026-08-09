@@ -1,6 +1,7 @@
 package commits
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ type recordingExtractor struct {
 	err       error
 }
 
-func (extractor *recordingExtractor) Extract(sha string, destination string) error {
+func (extractor *recordingExtractor) Extract(ctx context.Context, sha string, destination string) error {
 	extractor.extracted = append(extractor.extracted, sha)
 	if extractor.err != nil {
 		return extractor.err
@@ -36,7 +37,7 @@ func (extractor *recordingExtractor) Extract(sha string, destination string) err
 	return os.MkdirAll(destination, 0o755)
 }
 
-func (extractor *recordingExtractor) Release(destination string) {
+func (extractor *recordingExtractor) Release(ctx context.Context, destination string) {
 	extractor.released = append(extractor.released, destination)
 }
 
@@ -59,7 +60,7 @@ func TestEnsure(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := NewRepo(gittest.NewRunner(test.responses), exectest.NewRunner()).Ensure()
+			err := NewRepo(gittest.NewRunner(test.responses), exectest.NewRunner()).Ensure(t.Context())
 
 			if test.wantError && err == nil {
 				t.Fatal("esperava erro, veio nil")
@@ -74,7 +75,7 @@ func TestEnsure(t *testing.T) {
 func TestRange(t *testing.T) {
 	responses := logOf("main", "aaa\x00primeiro assunto\nbbb\x00segundo assunto")
 
-	found, err := NewRepo(gittest.NewRunner(responses), exectest.NewRunner()).Range("main")
+	found, err := NewRepo(gittest.NewRunner(responses), exectest.NewRunner()).Range(t.Context(), "main")
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -93,7 +94,7 @@ func TestRange(t *testing.T) {
 func TestRangeKeepsTheOrderTheGitGave(t *testing.T) {
 	responses := logOf("main", "aaa\x00mais antigo\nbbb\x00do meio\nccc\x00mais novo")
 
-	found, _ := NewRepo(gittest.NewRunner(responses), exectest.NewRunner()).Range("main")
+	found, _ := NewRepo(gittest.NewRunner(responses), exectest.NewRunner()).Range(t.Context(), "main")
 
 	subjects := []string{found[0].Subject, found[1].Subject, found[2].Subject}
 	want := []string{"mais antigo", "do meio", "mais novo"}
@@ -106,7 +107,7 @@ func TestRangeKeepsTheOrderTheGitGave(t *testing.T) {
 }
 
 func TestRangeWithNothingInTheInterval(t *testing.T) {
-	found, err := NewRepo(gittest.NewRunner(logOf("main", "")), exectest.NewRunner()).Range("main")
+	found, err := NewRepo(gittest.NewRunner(logOf("main", "")), exectest.NewRunner()).Range(t.Context(), "main")
 
 	if err != nil {
 		t.Fatalf("intervalo vazio nao e falha, veio %v", err)
@@ -119,7 +120,7 @@ func TestRangeWithNothingInTheInterval(t *testing.T) {
 func TestRangeDropsATruncatedRecord(t *testing.T) {
 	responses := logOf("main", "aaa\x00completo\nsem-separador\n\x00sem-sha")
 
-	found, err := NewRepo(gittest.NewRunner(responses), exectest.NewRunner()).Range("main")
+	found, err := NewRepo(gittest.NewRunner(responses), exectest.NewRunner()).Range(t.Context(), "main")
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -132,7 +133,7 @@ func TestRangeDropsATruncatedRecord(t *testing.T) {
 func TestRangePropagatesTheGitFailure(t *testing.T) {
 	responses := map[string]gittest.Response{insideWorkTree: {Output: "true"}}
 
-	if _, err := NewRepo(gittest.NewRunner(responses), exectest.NewRunner()).Range("inexistente"); err == nil {
+	if _, err := NewRepo(gittest.NewRunner(responses), exectest.NewRunner()).Range(t.Context(), "inexistente"); err == nil {
 		t.Fatal("base desconhecida tem de virar erro")
 	}
 }
@@ -145,7 +146,7 @@ func TestCheckRunsTheCommandOnEveryCommit(t *testing.T) {
 	)
 	extractor := &recordingExtractor{}
 
-	results, err := NewRepo(gittest.NewRunner(nil), commands).Check(list, extractor, "go", []string{"test", "./..."})
+	results, err := NewRepo(gittest.NewRunner(nil), commands).Check(t.Context(), list, extractor, "go", []string{"test", "./..."})
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -172,7 +173,7 @@ func TestCheckNeverStopsAtTheFirstFailure(t *testing.T) {
 		exectest.Response{Result: exec.Result{Code: 0}},
 	)
 
-	results, err := NewRepo(gittest.NewRunner(nil), commands).Check(list, &recordingExtractor{}, "make", nil)
+	results, err := NewRepo(gittest.NewRunner(nil), commands).Check(t.Context(), list, &recordingExtractor{}, "make", nil)
 
 	if err != nil {
 		t.Fatalf("commit vermelho nao e falha da varredura, veio %v", err)
@@ -189,7 +190,7 @@ func TestCheckPassesTheArgumentsThrough(t *testing.T) {
 	commands := exectest.NewRunner(exectest.Response{})
 
 	_, err := NewRepo(gittest.NewRunner(nil), commands).Check(
-		[]Commit{{SHA: "aaa"}}, &recordingExtractor{}, "go", []string{"test", "-run", "Test A"})
+		t.Context(), []Commit{{SHA: "aaa"}}, &recordingExtractor{}, "go", []string{"test", "-run", "Test A"})
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -208,7 +209,7 @@ func TestCheckRunsInsideTheExtractedTreeAndCleansUp(t *testing.T) {
 	extractor := &recordingExtractor{}
 	commands := exectest.NewRunner(exectest.Response{})
 
-	_, err := NewRepo(gittest.NewRunner(nil), commands).Check([]Commit{{SHA: "aaa"}}, extractor, "go", nil)
+	_, err := NewRepo(gittest.NewRunner(nil), commands).Check(t.Context(), []Commit{{SHA: "aaa"}}, extractor, "go", nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -229,7 +230,7 @@ func TestCheckRunsInsideTheExtractedTreeAndCleansUp(t *testing.T) {
 func TestCheckPropagatesTheExtractionFailure(t *testing.T) {
 	extractor := &recordingExtractor{err: errors.New("sha nao existe")}
 
-	_, err := NewRepo(gittest.NewRunner(nil), exectest.NewRunner()).Check([]Commit{{SHA: "aaa"}}, extractor, "go", nil)
+	_, err := NewRepo(gittest.NewRunner(nil), exectest.NewRunner()).Check(t.Context(), []Commit{{SHA: "aaa"}}, extractor, "go", nil)
 
 	if err == nil {
 		t.Fatal("falha na extracao tem de virar erro")
@@ -239,7 +240,7 @@ func TestCheckPropagatesTheExtractionFailure(t *testing.T) {
 func TestCheckPropagatesTheCommandThatCannotStart(t *testing.T) {
 	commands := exectest.NewRunner(exectest.Response{Err: errors.New("executable file not found")})
 
-	_, err := NewRepo(gittest.NewRunner(nil), commands).Check([]Commit{{SHA: "aaa"}}, &recordingExtractor{}, "inexistente", nil)
+	_, err := NewRepo(gittest.NewRunner(nil), commands).Check(t.Context(), []Commit{{SHA: "aaa"}}, &recordingExtractor{}, "inexistente", nil)
 
 	if err == nil {
 		t.Fatal("comando que nem comeca e falha da varredura, nao commit vermelho")
@@ -247,7 +248,7 @@ func TestCheckPropagatesTheCommandThatCannotStart(t *testing.T) {
 }
 
 func TestCheckWithoutCommits(t *testing.T) {
-	results, err := NewRepo(gittest.NewRunner(nil), exectest.NewRunner()).Check(nil, &recordingExtractor{}, "go", nil)
+	results, err := NewRepo(gittest.NewRunner(nil), exectest.NewRunner()).Check(t.Context(), nil, &recordingExtractor{}, "go", nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -280,7 +281,7 @@ func TestCheckPropagatesTheWorkspaceItCannotCreate(t *testing.T) {
 	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "nao-existe"))
 
 	_, err := NewRepo(gittest.NewRunner(nil), exectest.NewRunner()).Check(
-		[]Commit{{SHA: "aaa"}}, &recordingExtractor{}, "go", nil)
+		t.Context(), []Commit{{SHA: "aaa"}}, &recordingExtractor{}, "go", nil)
 
 	if err == nil {
 		t.Fatal("sem diretorio temporario nao ha onde extrair; tem de virar erro")

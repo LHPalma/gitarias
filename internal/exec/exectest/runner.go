@@ -1,6 +1,7 @@
 package exectest
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/LHPalma/gitarias/internal/exec"
@@ -15,7 +16,11 @@ func NewRunner(responses ...Response) *Runner {
 	return &Runner{Responses: responses}
 }
 
-func (runner *Runner) Run(directory string, name string, args ...string) (exec.Result, error) {
+func (runner *Runner) Run(ctx context.Context, directory string, name string, args ...string) (exec.Result, error) {
+	if cancelled := ctx.Err(); cancelled != nil {
+		return exec.Result{}, cancelled
+	}
+
 	runner.Calls = append(runner.Calls, Call{Directory: directory, Name: name, Args: args})
 
 	if len(runner.Calls) > len(runner.Responses) {

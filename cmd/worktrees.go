@@ -29,11 +29,13 @@ func runWorktrees(command *cobra.Command, repo *worktree.Repo, options formatOpt
 		return err
 	}
 
-	if err := repo.Ensure(); err != nil {
+	ctx := command.Context()
+
+	if err := repo.Ensure(ctx); err != nil {
 		return err
 	}
 
-	worktrees, err := repo.List()
+	worktrees, err := repo.List(ctx)
 	if err != nil {
 		return err
 	}

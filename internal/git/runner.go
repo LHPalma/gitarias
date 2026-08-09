@@ -1,5 +1,7 @@
 package git
 
+import "context"
+
 type Runner interface {
-	Run(args ...string) (string, error)
+	Run(ctx context.Context, args ...string) (string, error)
 }

@@ -1,5 +1,7 @@
 package exec
 
+import "context"
+
 type Runner interface {
-	Run(directory string, name string, args ...string) (Result, error)
+	Run(ctx context.Context, directory string, name string, args ...string) (Result, error)
 }

@@ -144,7 +144,7 @@ func TestListMarksCurrent(t *testing.T) {
 				topLevelCommand: test.topLevel,
 			})
 
-			worktrees, err := NewRepo(runner).List()
+			worktrees, err := NewRepo(runner).List(t.Context())
 			if err != nil {
 				t.Fatalf("não esperava erro, veio %v", err)
 			}
@@ -168,7 +168,7 @@ func TestListDoesNotMarkEmptyPathAsCurrent(t *testing.T) {
 		topLevelCommand: {Output: ""},
 	})
 
-	worktrees, err := NewRepo(runner).List()
+	worktrees, err := NewRepo(runner).List(t.Context())
 	if err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
@@ -185,7 +185,7 @@ func TestListPropagatesGitError(t *testing.T) {
 		listCommand: {Err: errors.New("fatal: not a git repository")},
 	})
 
-	if _, err := NewRepo(runner).List(); err == nil {
+	if _, err := NewRepo(runner).List(t.Context()); err == nil {
 		t.Fatal("esperava erro, veio nil")
 	}
 }
@@ -195,7 +195,7 @@ func TestEnsure(t *testing.T) {
 		"rev-parse --is-inside-work-tree": {Err: errors.New("fatal: not a git repository")},
 	})
 
-	err := NewRepo(runner).Ensure()
+	err := NewRepo(runner).Ensure(t.Context())
 	if err == nil {
 		t.Fatal("esperava erro, veio nil")
 	}
@@ -210,7 +210,7 @@ func TestListNeverReadsRemoteRefs(t *testing.T) {
 		topLevelCommand: {Output: "/repo"},
 	})
 
-	if _, err := NewRepo(runner).List(); err != nil {
+	if _, err := NewRepo(runner).List(t.Context()); err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
 

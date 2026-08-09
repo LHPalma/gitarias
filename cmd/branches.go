@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -52,23 +53,24 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 		return fmt.Errorf("--format %s não vale com --clean; --clean é interativo e imprime o que deletou", chosen.format)
 	}
 
+	ctx := command.Context()
 	output, errorOutput := command.OutOrStdout(), command.ErrOrStderr()
 
-	if err := repo.Ensure(); err != nil {
+	if err := repo.Ensure(ctx); err != nil {
 		return err
 	}
 
-	base, err := repo.ResolveBase(options.base)
+	base, err := repo.ResolveBase(ctx, options.base)
 	if err != nil {
 		return err
 	}
 
-	merged, err := repo.Merged(base)
+	merged, err := repo.Merged(ctx, base)
 	if err != nil {
 		return err
 	}
 
-	free, held := splitByWorktree(merged, checkedOutElsewhere(worktrees))
+	free, held := splitByWorktree(merged, checkedOutElsewhere(ctx, worktrees))
 	data := branchesTable{base: base, free: free, held: held}
 
 	if chosen.format != format.Text {
@@ -109,7 +111,7 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 		return nil
 	}
 
-	return report(output, errorOutput, repo.Delete(candidates, options.force))
+	return report(output, errorOutput, repo.Delete(ctx, candidates, options.force))
 }
 
 func emitBranches(command *cobra.Command, chosen rendering, options branchesOptions, data branchesTable) error {
@@ -120,8 +122,8 @@ func emitBranches(command *cobra.Command, chosen rendering, options branchesOpti
 	return emit(command.OutOrStdout(), options.output, "branches", chosen, data)
 }
 
-func checkedOutElsewhere(worktrees *worktree.Repo) map[string]string {
-	entries, err := worktrees.List()
+func checkedOutElsewhere(ctx context.Context, worktrees *worktree.Repo) map[string]string {
+	entries, err := worktrees.List(ctx)
 	if err != nil {
 		return nil
 	}

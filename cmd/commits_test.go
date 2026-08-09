@@ -3,6 +3,7 @@ package cmd
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -36,7 +37,7 @@ type extractingRunner struct {
 	t *testing.T
 }
 
-func (runner *extractingRunner) Run(args ...string) (string, error) {
+func (runner *extractingRunner) Run(ctx context.Context, args ...string) (string, error) {
 	switch {
 	case args[0] == "archive":
 		runner.Calls = append(runner.Calls, strings.Join(args, " "))
@@ -53,7 +54,7 @@ func (runner *extractingRunner) Run(args ...string) (string, error) {
 		}
 		return "", nil
 	default:
-		return runner.Runner.Run(args...)
+		return runner.Runner.Run(ctx, args...)
 	}
 }
 

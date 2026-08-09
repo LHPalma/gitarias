@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"context"
 	"strings"
 
 	"github.com/LHPalma/gitarias/internal/git"
@@ -14,19 +15,19 @@ func NewRepo(runner git.Runner) *Repo {
 	return &Repo{runner: runner}
 }
 
-func (repo *Repo) Ensure() error {
-	return git.EnsureRepo(repo.runner)
+func (repo *Repo) Ensure(ctx context.Context) error {
+	return git.EnsureRepo(ctx, repo.runner)
 }
 
-func (repo *Repo) List() ([]Worktree, error) {
-	output, err := repo.runner.Run("worktree", "list", "--porcelain")
+func (repo *Repo) List(ctx context.Context) ([]Worktree, error) {
+	output, err := repo.runner.Run(ctx, "worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, err
 	}
 
 	worktrees := parse(output)
 
-	currentPath, err := repo.runner.Run("rev-parse", "--show-toplevel")
+	currentPath, err := repo.runner.Run(ctx, "rev-parse", "--show-toplevel")
 	if err == nil && currentPath != "" {
 		for index := range worktrees {
 			worktrees[index].Current = worktrees[index].Path == currentPath

@@ -8,7 +8,7 @@ import (
 )
 
 func TestCommandRunnerCapturesASuccess(t *testing.T) {
-	result, err := CommandRunner{}.Run(t.TempDir(), "echo", "oi")
+	result, err := CommandRunner{}.Run(t.Context(), t.TempDir(), "echo", "oi")
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -22,7 +22,7 @@ func TestCommandRunnerCapturesASuccess(t *testing.T) {
 }
 
 func TestCommandRunnerTreatsANonZeroExitAsAResult(t *testing.T) {
-	result, err := CommandRunner{}.Run(t.TempDir(), "false")
+	result, err := CommandRunner{}.Run(t.Context(), t.TempDir(), "false")
 
 	if err != nil {
 		t.Fatalf("sair diferente de zero e resposta, nao falha da ferramenta; veio %v", err)
@@ -33,7 +33,7 @@ func TestCommandRunnerTreatsANonZeroExitAsAResult(t *testing.T) {
 }
 
 func TestCommandRunnerFailsWhenTheCommandCannotStart(t *testing.T) {
-	if _, err := (CommandRunner{}).Run(t.TempDir(), "comando-que-nao-existe-em-lugar-nenhum"); err == nil {
+	if _, err := (CommandRunner{}).Run(t.Context(), t.TempDir(), "comando-que-nao-existe-em-lugar-nenhum"); err == nil {
 		t.Fatal("comando inexistente e falha da ferramenta, nao commit vermelho")
 	}
 }
@@ -44,7 +44,7 @@ func TestCommandRunnerRunsInsideTheDirectoryAsked(t *testing.T) {
 		t.Fatalf("nao consegui montar o cenario: %v", err)
 	}
 
-	result, err := CommandRunner{}.Run(directory, "cat", "marcador.txt")
+	result, err := CommandRunner{}.Run(t.Context(), directory, "cat", "marcador.txt")
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -55,7 +55,7 @@ func TestCommandRunnerRunsInsideTheDirectoryAsked(t *testing.T) {
 }
 
 func TestCommandRunnerCapturesTheErrorOutputToo(t *testing.T) {
-	result, err := CommandRunner{}.Run(t.TempDir(), "sh", "-c", "echo problema >&2; exit 3")
+	result, err := CommandRunner{}.Run(t.Context(), t.TempDir(), "sh", "-c", "echo problema >&2; exit 3")
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -71,7 +71,7 @@ func TestCommandRunnerCapturesTheErrorOutputToo(t *testing.T) {
 func TestCommandRunnerNeverGoesThroughAShell(t *testing.T) {
 	directory := t.TempDir()
 
-	result, err := CommandRunner{}.Run(directory, "echo", "*")
+	result, err := CommandRunner{}.Run(t.Context(), directory, "echo", "*")
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)

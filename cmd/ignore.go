@@ -45,11 +45,13 @@ func runIgnoreList(command *cobra.Command, repo *ignore.Repo, options ignoreList
 		return err
 	}
 
-	if err := repo.Ensure(); err != nil {
+	ctx := command.Context()
+
+	if err := repo.Ensure(ctx); err != nil {
 		return err
 	}
 
-	entries, err := repo.List(options.expand)
+	entries, err := repo.List(ctx, options.expand)
 	if err != nil {
 		return err
 	}

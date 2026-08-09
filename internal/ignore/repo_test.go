@@ -33,7 +33,7 @@ func TestList(t *testing.T) {
 			".git/info/exclude\x001\x00local-only/\x00local-only/\x00",
 	))
 
-	entries, err := NewRepo(runner).List(false)
+	entries, err := NewRepo(runner).List(t.Context(), false)
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
@@ -66,7 +66,7 @@ func TestListMarksTheCollapsedDirectory(t *testing.T) {
 			".gitignore\x001\x00node_modules/\x00node_modules/\x00",
 	))
 
-	entries, err := NewRepo(runner).List(false)
+	entries, err := NewRepo(runner).List(t.Context(), false)
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
@@ -86,7 +86,7 @@ func TestListDistinguishesWhoIgnored(t *testing.T) {
 			"/home/luiz/.config/git/ignore\x007\x00b\x00b\x00",
 	))
 
-	entries, err := NewRepo(runner).List(false)
+	entries, err := NewRepo(runner).List(t.Context(), false)
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
@@ -114,7 +114,7 @@ func TestListCollapsesDirectoriesUnlessExpanded(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			runner := gittest.NewRunner(inspected("app.log\x00", ".gitignore\x002\x00*.log\x00app.log\x00"))
 
-			if _, err := NewRepo(runner).List(test.expand); err != nil {
+			if _, err := NewRepo(runner).List(t.Context(), test.expand); err != nil {
 				t.Fatalf("nao esperava erro, veio %v", err)
 			}
 
@@ -142,7 +142,7 @@ func TestListFeedsCheckIgnoreThroughStdin(t *testing.T) {
 	candidates := "app.log\x00node_modules/\x00"
 	runner := gittest.NewRunner(inspected(candidates, ".gitignore\x002\x00*.log\x00app.log\x00"))
 
-	if _, err := NewRepo(runner).List(false); err != nil {
+	if _, err := NewRepo(runner).List(t.Context(), false); err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
 
@@ -162,7 +162,7 @@ func TestListKeepsPathsThatWouldBeQuoted(t *testing.T) {
 		".gitignore\x004\x00relat*.csv\x00relatório 2026.csv\x00",
 	))
 
-	entries, err := NewRepo(runner).List(false)
+	entries, err := NewRepo(runner).List(t.Context(), false)
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
@@ -181,7 +181,7 @@ func TestListWithNothingIgnored(t *testing.T) {
 
 	runner := gittest.NewRunner(responses)
 
-	entries, err := NewRepo(runner).List(false)
+	entries, err := NewRepo(runner).List(t.Context(), false)
 	if err != nil {
 		t.Fatalf("codigo 1 do check-ignore e resposta, nao falha; veio %v", err)
 	}
@@ -196,7 +196,7 @@ func TestListWithoutCandidatesNeverAsksForRules(t *testing.T) {
 		collapsedListing:                  {Output: ""},
 	})
 
-	entries, err := NewRepo(runner).List(false)
+	entries, err := NewRepo(runner).List(t.Context(), false)
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
@@ -215,7 +215,7 @@ func TestListPropagatesListingFailure(t *testing.T) {
 	responses := inspected("", "")
 	responses[collapsedListing] = gittest.Response{Err: errNotARepository}
 
-	if _, err := NewRepo(gittest.NewRunner(responses)).List(false); err == nil {
+	if _, err := NewRepo(gittest.NewRunner(responses)).List(t.Context(), false); err == nil {
 		t.Fatal("falha do ls-files tem de virar erro")
 	}
 }
@@ -224,7 +224,7 @@ func TestListPropagatesRealCheckIgnoreFailure(t *testing.T) {
 	responses := inspected("app.log\x00", "")
 	responses[rules] = gittest.Response{Err: &git.ExitError{Code: 128, Message: "fatal: not a git repository"}}
 
-	_, err := NewRepo(gittest.NewRunner(responses)).List(false)
+	_, err := NewRepo(gittest.NewRunner(responses)).List(t.Context(), false)
 	if err == nil {
 		t.Fatal("codigo 128 e falha de verdade e nao pode virar lista vazia")
 	}
@@ -240,7 +240,7 @@ func TestListIgnoresMalformedRecords(t *testing.T) {
 			".gitignore\x003\x00b\x00b\x00",
 	))
 
-	entries, err := NewRepo(runner).List(false)
+	entries, err := NewRepo(runner).List(t.Context(), false)
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
@@ -256,7 +256,7 @@ func TestListIgnoresMalformedRecords(t *testing.T) {
 func TestListToleratesOutputWithoutTrailingSeparator(t *testing.T) {
 	runner := gittest.NewRunner(inspected("app.log\x00", ".gitignore\x002\x00*.log\x00app.log"))
 
-	entries, err := NewRepo(runner).List(false)
+	entries, err := NewRepo(runner).List(t.Context(), false)
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
@@ -272,7 +272,7 @@ func TestListDropsATruncatedRecord(t *testing.T) {
 			".gitignore\x003\x00*.tmp",
 	))
 
-	entries, err := NewRepo(runner).List(false)
+	entries, err := NewRepo(runner).List(t.Context(), false)
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
@@ -290,7 +290,7 @@ func TestEnsureRejectsWhatIsNotARepository(t *testing.T) {
 		"rev-parse --is-inside-work-tree": {Err: errNotARepository},
 	})
 
-	err := NewRepo(runner).Ensure()
+	err := NewRepo(runner).Ensure(t.Context())
 	if err == nil {
 		t.Fatal("esperava erro, veio nil")
 	}
@@ -304,7 +304,7 @@ func TestEnsureAcceptsARepository(t *testing.T) {
 		"rev-parse --is-inside-work-tree": {Output: "true"},
 	})
 
-	if err := NewRepo(runner).Ensure(); err != nil {
+	if err := NewRepo(runner).Ensure(t.Context()); err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
 }

@@ -1,6 +1,8 @@
 package commits
 
+import "context"
+
 type Extractor interface {
-	Extract(sha string, destination string) error
-	Release(destination string)
+	Extract(ctx context.Context, sha string, destination string) error
+	Release(ctx context.Context, destination string)
 }

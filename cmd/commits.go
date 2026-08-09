@@ -58,16 +58,18 @@ func runCommitsCheck(command *cobra.Command, repo *commits.Repo, extraction comm
 		return err
 	}
 
-	if err := repo.Ensure(); err != nil {
+	ctx := command.Context()
+
+	if err := repo.Ensure(ctx); err != nil {
 		return err
 	}
 
-	list, err := repo.Range(base)
+	list, err := repo.Range(ctx, base)
 	if err != nil {
 		return err
 	}
 
-	results, err := repo.Check(list, extraction, verification[0], verification[1:])
+	results, err := repo.Check(ctx, list, extraction, verification[0], verification[1:])
 	if err != nil {
 		return err
 	}

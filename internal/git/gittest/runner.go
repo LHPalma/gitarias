@@ -1,6 +1,7 @@
 package gittest
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -15,7 +16,11 @@ func NewRunner(responses map[string]Response) *Runner {
 	return &Runner{Responses: responses, Inputs: map[string]string{}}
 }
 
-func (runner *Runner) Run(args ...string) (string, error) {
+func (runner *Runner) Run(ctx context.Context, args ...string) (string, error) {
+	if cancelled := ctx.Err(); cancelled != nil {
+		return "", cancelled
+	}
+
 	command := strings.Join(args, " ")
 	runner.Calls = append(runner.Calls, command)
 
@@ -27,8 +32,8 @@ func (runner *Runner) Run(args ...string) (string, error) {
 	return response.Output, response.Err
 }
 
-func (runner *Runner) RunWithInput(input string, args ...string) (string, error) {
+func (runner *Runner) RunWithInput(ctx context.Context, input string, args ...string) (string, error) {
 	runner.Inputs[strings.Join(args, " ")] = input
 
-	return runner.Run(args...)
+	return runner.Run(ctx, args...)
 }

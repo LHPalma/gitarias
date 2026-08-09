@@ -1,6 +1,7 @@
 package ignore
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -18,12 +19,12 @@ func NewRepo(runner Runner) *Repo {
 	return &Repo{runner: runner}
 }
 
-func (repo *Repo) Ensure() error {
-	return git.EnsureRepo(repo.runner)
+func (repo *Repo) Ensure(ctx context.Context) error {
+	return git.EnsureRepo(ctx, repo.runner)
 }
 
-func (repo *Repo) List(expand bool) ([]Entry, error) {
-	candidates, err := repo.candidates(expand)
+func (repo *Repo) List(ctx context.Context, expand bool) ([]Entry, error) {
+	candidates, err := repo.candidates(ctx, expand)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +32,7 @@ func (repo *Repo) List(expand bool) ([]Entry, error) {
 		return nil, nil
 	}
 
-	output, err := repo.runner.RunWithInput(candidates, "check-ignore", "-z", "--stdin", "-v")
+	output, err := repo.runner.RunWithInput(ctx, candidates, "check-ignore", "-z", "--stdin", "-v")
 	if err != nil {
 		if nothingMatched(err) {
 			return nil, nil
@@ -42,13 +43,13 @@ func (repo *Repo) List(expand bool) ([]Entry, error) {
 	return parse(output), nil
 }
 
-func (repo *Repo) candidates(expand bool) (string, error) {
+func (repo *Repo) candidates(ctx context.Context, expand bool) (string, error) {
 	args := []string{"ls-files", "--others", "--ignored", "--exclude-standard"}
 	if !expand {
 		args = append(args, "--directory", "--no-empty-directory")
 	}
 
-	return repo.runner.Run(append(args, "-z")...)
+	return repo.runner.Run(ctx, append(args, "-z")...)
 }
 
 func nothingMatched(err error) bool {

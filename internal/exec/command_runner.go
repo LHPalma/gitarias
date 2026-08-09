@@ -1,17 +1,22 @@
 package exec
 
 import (
+	"context"
 	"errors"
 	osexec "os/exec"
 )
 
 type CommandRunner struct{}
 
-func (CommandRunner) Run(directory string, name string, args ...string) (Result, error) {
-	prepared := osexec.Command(name, args...)
+func (CommandRunner) Run(ctx context.Context, directory string, name string, args ...string) (Result, error) {
+	prepared := osexec.CommandContext(ctx, name, args...)
 	prepared.Dir = directory
 
 	output, err := prepared.CombinedOutput()
+
+	if cancelled := ctx.Err(); cancelled != nil {
+		return Result{}, cancelled
+	}
 
 	var exitError *osexec.ExitError
 	switch {
