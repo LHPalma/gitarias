@@ -37,7 +37,7 @@ func (data ignoredTable) document() any {
 		})
 	}
 
-	return records
+	return ignoredDocument{Ignored: records}
 }
 
 func (data ignoredTable) text(output io.Writer) error {

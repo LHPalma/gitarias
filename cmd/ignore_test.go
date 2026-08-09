@@ -388,18 +388,31 @@ func TestIgnoreListCommandJSON(t *testing.T) {
 		t.Fatalf("não esperava erro, veio %v", result.err)
 	}
 
-	var records []ignoredRecord
-	if err := json.Unmarshal([]byte(result.stdout), &records); err != nil {
+	var document ignoredDocument
+	if err := json.Unmarshal([]byte(result.stdout), &document); err != nil {
 		t.Fatalf("a saída tem de ser json válido, veio %q: %v", result.stdout, err)
 	}
 
-	if len(records) != 3 {
-		t.Fatalf("registros = %v, queria os três", records)
+	if len(document.Ignored) != 3 {
+		t.Fatalf("registros = %v, queria os três", document.Ignored)
 	}
 
 	first := ignoredRecord{Source: ".gitignore", Line: 2, Pattern: "*.log", Path: "app.log"}
-	if records[0] != first {
-		t.Errorf("primeiro = %+v, queria %+v", records[0], first)
+	if document.Ignored[0] != first {
+		t.Errorf("primeiro = %+v, queria %+v", document.Ignored[0], first)
+	}
+}
+
+func TestIgnoreListCommandJSONWrapsTheListInTheCommandKey(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--format", "json")
+
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(result.stdout), &envelope); err != nil {
+		t.Fatalf("o json tem de ser um objeto e não um array, veio %q: %v", result.stdout, err)
+	}
+
+	if _, named := envelope["ignored"]; !named {
+		t.Errorf("chaves = %v, a lista mora sob a chave do comando", envelope)
 	}
 }
 
@@ -412,7 +425,7 @@ func TestIgnoreListCommandJSONWithNothingIgnored(t *testing.T) {
 	if result.err != nil {
 		t.Fatalf("não esperava erro, veio %v", result.err)
 	}
-	if result.stdout != "[]\n" {
+	if result.stdout != "{\n  \"ignored\": []\n}\n" {
 		t.Errorf("saída = %q, queria a lista vazia e nunca a frase em português", result.stdout)
 	}
 }
