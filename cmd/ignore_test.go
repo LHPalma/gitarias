@@ -218,7 +218,7 @@ func TestIgnoreListCommandNeverEndsALineWithSpace(t *testing.T) {
 }
 
 func TestIgnoreListCommandPropagatesWriteFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(populated()))
+	command := NewRootCommand(gittest.NewRunner(populated()), noCommands())
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"ignore", "list"})

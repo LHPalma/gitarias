@@ -3,10 +3,11 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/LHPalma/gitarias/internal/exec"
 	"github.com/spf13/cobra"
 )
 
-func NewRootCommand(runner Runner) *cobra.Command {
+func NewRootCommand(runner Runner, commands exec.Runner) *cobra.Command {
 	command := &cobra.Command{
 		Use:           "gtr",
 		Short:         "Utilitários de git pro dia a dia",
@@ -16,6 +17,7 @@ func NewRootCommand(runner Runner) *cobra.Command {
 	}
 
 	command.AddCommand(newBranchesCommand(runner))
+	command.AddCommand(newCommitsCommand(runner, commands))
 	command.AddCommand(newIgnoreCommand(runner))
 	command.AddCommand(newWorktreesCommand(runner))
 
