@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/LHPalma/gitarias/internal/exec"
 	"github.com/spf13/cobra"
@@ -25,8 +29,11 @@ func NewRootCommand(runner Runner, commands exec.Runner) *cobra.Command {
 }
 
 func Run(command *cobra.Command) int {
-	if err := command.Execute(); err != nil {
-		fmt.Fprintln(command.ErrOrStderr(), "erro:", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := command.ExecuteContext(ctx); err != nil {
+		fmt.Fprintln(command.ErrOrStderr(), "erro:", describeCancellation(err))
 		return 1
 	}
 
