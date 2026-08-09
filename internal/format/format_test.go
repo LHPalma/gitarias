@@ -83,7 +83,7 @@ func TestPath(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := test.chosen.Path(test.path)
+			got, err := test.chosen.Path(test.path, "ignorados")
 			if err != nil {
 				t.Fatalf("nao esperava erro, veio %v", err)
 			}
@@ -97,7 +97,7 @@ func TestPath(t *testing.T) {
 func TestPathRefusesWhatNamesADirectory(t *testing.T) {
 	for _, path := range []string{"saida/", "saida/2026/", "/tmp/"} {
 		t.Run("recusa "+path, func(t *testing.T) {
-			got, err := CSV.Path(path)
+			got, err := CSV.Path(path, "ignorados")
 
 			if err == nil {
 				t.Fatalf("%q viraria um arquivo oculto chamado .csv dentro do diretorio", path)
@@ -113,7 +113,7 @@ func TestPathRefusesWhatNamesADirectory(t *testing.T) {
 }
 
 func TestPathSuggestsAFileNameWhenRefusing(t *testing.T) {
-	_, err := CSV.Path("saida/")
+	_, err := CSV.Path("saida/", "ignorados")
 
 	if err == nil {
 		t.Fatal("esperava erro, veio nil")
@@ -123,8 +123,32 @@ func TestPathSuggestsAFileNameWhenRefusing(t *testing.T) {
 	}
 }
 
+func TestPathSuggestsTheNameOfTheCommandThatAsked(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "ignorados", want: "saida/ignorados.csv"},
+		{name: "branches", want: "saida/branches.csv"},
+		{name: "worktrees", want: "saida/worktrees.csv"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := CSV.Path("saida/", test.name)
+
+			if err == nil {
+				t.Fatal("esperava erro, veio nil")
+			}
+			if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("erro = %v, o exemplo tem de ser do comando que rodou e nao de outro", err)
+			}
+		})
+	}
+}
+
 func TestPathRefusesTheEmptyPath(t *testing.T) {
-	if _, err := CSV.Path(""); err == nil {
+	if _, err := CSV.Path("", "ignorados"); err == nil {
 		t.Fatal("caminho vazio nao nomeia arquivo nenhum")
 	}
 }

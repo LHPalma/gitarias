@@ -37,14 +37,14 @@ func (chosen Format) Extension() string {
 	}
 }
 
-func (chosen Format) Path(path string) (string, error) {
+func (chosen Format) Path(path string, name string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("informe o caminho do arquivo a gravar")
 	}
 
 	if os.IsPathSeparator(path[len(path)-1]) {
 		return "", fmt.Errorf("%q nomeia um diretório; informe o caminho do arquivo, como %q",
-			path, path+"ignorados"+chosen.Extension())
+			path, path+name+chosen.Extension())
 	}
 
 	if filepath.Ext(path) != "" {

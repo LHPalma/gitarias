@@ -491,7 +491,7 @@ func TestIgnoreListCommandKeepsTheByteOrderMarkOffThePipe(t *testing.T) {
 }
 
 func TestRenderForFilePropagatesTheByteOrderMarkFailure(t *testing.T) {
-	err := renderForFile(brokenWriter{}, ignoredRendering{format: format.CSV, separator: format.Comma, header: true}, nil)
+	err := renderForFile(brokenWriter{}, rendering{format: format.CSV, separator: format.Comma, header: true}, ignoredTable{})
 
 	if err == nil {
 		t.Fatal("falha logo no BOM tem de virar erro em vez de seguir gravando")
@@ -516,7 +516,7 @@ func TestRenderForFileMarksOnlyTheDelimitedFormats(t *testing.T) {
 		t.Run(string(test.chosen), func(t *testing.T) {
 			output := &bytes.Buffer{}
 
-			if err := renderForFile(output, ignoredRendering{format: test.chosen, separator: format.Comma, header: true}, nil); err != nil {
+			if err := renderForFile(output, rendering{format: test.chosen, separator: format.Comma, header: true}, ignoredTable{}); err != nil {
 				t.Fatalf("não esperava erro, veio %v", err)
 			}
 
