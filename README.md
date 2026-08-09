@@ -201,6 +201,75 @@ caminho,atual,branch,head,destacado,bare,trancado,motivo_trancado,podável,motiv
 
 No `json` os booleanos são booleanos, e não `sim`/`não`.
 
+### `gtr commits check`
+
+Roda um comando em **cada commit** de um intervalo, com a árvore daquele commit
+isolada dos que vieram depois, e diz quais não se sustentam sozinhos.
+
+```
+$ gtr commits check main -- go test ./...
+Verificando 3 commit(s) sobre main.
+
+  verde     099cd54  refactor: share the output machinery
+  VERMELHO  d901b71  feat: give branches the shared output formats
+      # gitarias/cmd
+      cmd/branches.go:47:9: undefined: emitBranches
+  verde     ce4104a  feat: give worktrees the shared output formats
+```
+
+**A pergunta não é se o topo passa** — isso o CI já responde. É se cada commit
+passa **sozinho**. Um commit que só compila junto com o seguinte não incomoda
+ninguém no dia em que é escrito, e cobra a conta meses depois: é onde o
+`git bisect` para sem saber dizer nada, e é o commit que não dá para reverter
+isolado.
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--verbose` | `false` | Mostra também a saída dos commits que passaram |
+| `--worktree` | `false` | Extrai com `git worktree` em vez de `git archive`, para comando que precisa do `.git` |
+| `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
+| `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
+| `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
+| `--no-header` | `false` | Só com `csv` ou `tsv`. Omite a linha de nomes das colunas |
+
+**O comando vem depois de `--`, e não como texto entre aspas.** A diferença não
+é de estilo:
+
+```bash
+gtr commits check main -- go test ./...          # certo
+gtr commits check main --run "go test ./..."     # não existe, e de propósito
+```
+
+Aceitar uma string obrigaria a ferramenta a decidir onde ela se divide, e fazer
+isso direito é reimplementar um shell — com aspas, escape e expansão. Depois do
+`--`, quem já separou os argumentos foi o shell de quem chamou, e eles chegam
+inteiros. Um argumento com espaço continua sendo **um** argumento.
+
+**Nada é escrito no repositório.** A árvore de cada commit sai por
+`git archive` para um diretório temporário, apagado ao fim. Nenhuma ref é
+criada ou movida, o índice e a árvore de trabalho não são tocados, e o `HEAD`
+fica onde estava — então dá para rodar a verificação **com trabalho em
+andamento**, sem guardar nada antes.
+
+O `git` chega perto disso com `git rebase --exec`, mas por outro caminho:
+
+```bash
+git rebase --exec 'go test ./...' main
+```
+
+Ele **reescreve o histórico** para checar, e **para no primeiro vermelho**.
+Quem só quer saber o estado não quer reescrever nada, e quer a lista inteira —
+saber que o 1 e o 4 quebraram é diagnóstico; saber que "o 1 quebrou" é o que
+obriga a rodar tudo de novo depois de cada correção.
+
+**A árvore extraída não tem `.git`.** Comando que precise de metadado de git —
+contar commits, ler tags, gerar versão a partir do `describe` — falha ali. O
+`--worktree` troca a extração por `git worktree add --detach`, que resolve isso
+ao custo de escrever em `.git/worktrees/` enquanto roda. **O padrão é o que não
+escreve.**
+
+A saída é 1 se qualquer commit falhar, 0 se todos passarem.
+
 ### `gtr ignore list`
 
 Lista o que está sendo ignorado e **por qual regra** — pergunta que o git só
@@ -316,7 +385,8 @@ Estas não são configurações — são propriedades do código:
   entre elas é sua, porque custam coisas diferentes.
 - **Nunca roda através de um shell.** Os comandos git são invocados
   diretamente, sem `sh -c`. Uma branch com nome esquisito chega ao git como
-  argumento literal.
+  argumento literal, e o comando de verificação do `commits check` chega como o
+  `argv` que veio depois do `--`, sem ser reparseado.
 
 ## Saída e códigos
 
@@ -340,8 +410,9 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 
 ## Estado
 
-Os comandos `branches`, `worktrees` e `ignore list` estão no ar, os três com
-`--format`. Planejados: seleção interativa de quais branches apagar,
+Os comandos `branches`, `worktrees`, `commits check` e `ignore list` estão no
+ar, os quatro com `--format`. Planejados: seleção interativa de quais branches
+apagar, `gtr split` para quebrar a árvore suja em vários commits,
 `gtr ignore add`, `stats`, `changelog` e arquivo de configuração opcional.
 
 ## Contribuindo
