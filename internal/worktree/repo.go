@@ -67,10 +67,10 @@ func parse(output string) []Worktree {
 			pending.Bare = true
 		case "locked":
 			pending.Locked = true
-			pending.LockedReason = value
+			pending.LockedReason = unquote(value)
 		case "prunable":
 			pending.Prunable = true
-			pending.PrunableReason = value
+			pending.PrunableReason = unquote(value)
 		}
 	}
 

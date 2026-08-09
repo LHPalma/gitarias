@@ -226,6 +226,31 @@ func TestWorktreesCommandSuggestsTSVOnStderr(t *testing.T) {
 	}
 }
 
+func TestWorktreesCommandCarriesTheLockReasonUnescaped(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"rev-parse --show-toplevel":       {Output: "/repo"},
+		"worktree list --porcelain": {Output: "" +
+			"worktree /trancado\nHEAD abc\ndetached\nlocked \"revis\\303\\243o em andamento\"\n"},
+	}
+
+	for _, chosen := range []string{"text", "csv", "json"} {
+		t.Run(chosen, func(t *testing.T) {
+			result := execute(t, responses, "", "worktrees", "--format", chosen)
+
+			if result.err != nil {
+				t.Fatalf("não esperava erro, veio %v", result.err)
+			}
+			if !strings.Contains(result.stdout, "revisão em andamento") {
+				t.Errorf("saída = %q, queria o motivo legível", result.stdout)
+			}
+			if strings.Contains(result.stdout, `\303`) {
+				t.Errorf("saída = %q, o escape do git é da linha de comando dele e não do dado", result.stdout)
+			}
+		})
+	}
+}
+
 func TestYesNo(t *testing.T) {
 	if got := yesNo(true); got != "sim" {
 		t.Errorf("yesNo(true) = %q, queria %q", got, "sim")
