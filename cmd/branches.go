@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/LHPalma/gitarias/internal/branch"
+	"github.com/LHPalma/gitarias/internal/format"
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/ui"
 	"github.com/LHPalma/gitarias/internal/worktree"
@@ -15,6 +16,7 @@ import (
 )
 
 type branchesOptions struct {
+	formatOptions
 	base  string
 	clean bool
 	force bool
@@ -35,11 +37,21 @@ func newBranchesCommand(runner git.Runner) *cobra.Command {
 	command.Flags().StringVar(&options.base, "base", "", "branch base; se omitida, é detectada automaticamente")
 	command.Flags().BoolVar(&options.clean, "clean", false, "deleta as branches mergeadas, pedindo confirmação")
 	command.Flags().BoolVar(&options.force, "force", false, "com --clean, força a deleção das squashadas e rebaseadas, que o git recusa apagar com -d")
+	options.register(command)
 
 	return command
 }
 
 func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.Repo, options branchesOptions) error {
+	chosen, err := options.resolve(command)
+	if err != nil {
+		return err
+	}
+
+	if options.clean && chosen.format != format.Text {
+		return fmt.Errorf("--format %s não vale com --clean; --clean é interativo e imprime o que deletou", chosen.format)
+	}
+
 	output, errorOutput := command.OutOrStdout(), command.ErrOrStderr()
 
 	if err := repo.Ensure(); err != nil {
@@ -57,24 +69,20 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 	}
 
 	free, held := splitByWorktree(merged, checkedOutElsewhere(worktrees))
+	data := branchesTable{base: base, free: free, held: held}
+
+	if chosen.format != format.Text {
+		return emitBranches(command, chosen, options, data)
+	}
 
 	fmt.Fprintf(output, "Base: %s (%s)\n\n", base.Name, ui.DescribeSource(base.Source))
 
-	if len(free) == 0 && len(held) == 0 {
-		fmt.Fprintln(output, "Nenhuma branch local mergeada para limpar.")
+	if err := data.text(output); err != nil {
+		return err
+	}
+
+	if data.empty() {
 		return nil
-	}
-
-	if len(free) > 0 {
-		if err := printMerged(output, free); err != nil {
-			return err
-		}
-	}
-
-	if len(held) > 0 {
-		if err := printHeld(output, held); err != nil {
-			return err
-		}
 	}
 
 	if !options.clean {
@@ -102,6 +110,14 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 	}
 
 	return report(output, errorOutput, repo.Delete(candidates, options.force))
+}
+
+func emitBranches(command *cobra.Command, chosen rendering, options branchesOptions, data branchesTable) error {
+	if chosen.format.Delimited() {
+		fmt.Fprintf(command.ErrOrStderr(), "Base: %s (%s)\n", data.base.Name, ui.DescribeSource(data.base.Source))
+	}
+
+	return emit(command.OutOrStdout(), options.output, "branches", chosen, data)
 }
 
 func checkedOutElsewhere(worktrees *worktree.Repo) map[string]string {

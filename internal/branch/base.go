@@ -8,6 +8,17 @@ const (
 	BaseFromLocal
 )
 
+func (source BaseSource) String() string {
+	switch source {
+	case BaseFromFlag:
+		return "flag"
+	case BaseFromOriginHead:
+		return "origin-head"
+	default:
+		return "local"
+	}
+}
+
 type Base struct {
 	Name   string
 	Source BaseSource
