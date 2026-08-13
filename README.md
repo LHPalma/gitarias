@@ -45,6 +45,7 @@ Use --clean para deletar.
 | `--clean` | `false` | Deleta as branches listadas, após confirmação |
 | `--base <branch>` | vazio | Define a base; vazio aciona a detecção automática |
 | `--force` | `false` | Com `--clean`, força a deleção das squashadas e rebaseadas |
+| `--tree` | `false` | Mostra **todas** as branches locais como árvore, cada uma sob aquela em que foi empilhada |
 | `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
 | `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
 | `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
@@ -161,6 +162,46 @@ CSV ou descartaria a flag em silêncio:
 $ gtr branches --clean --format csv
 erro: --format csv não vale com --clean; --clean é interativo e imprime o que deletou
 ```
+
+**`--tree` responde outra pergunta.** A listagem normal diz *o que eu posso
+limpar* e por isso só mostra o que está mergeado. A árvore diz *como minhas
+branches se relacionam*, e mostra todas:
+
+```
+$ gtr branches --tree
+Base: main (encontrada localmente)
+
+main
+└─ camada-1        squashada
+   └─ camada-2     não mergeada
+      └─ camada-3  não mergeada
+```
+
+**O git não guarda quem é o pai de uma branch** — `branch.<x>.merge` aponta
+para o upstream remoto, não para a branch local de onde ela saiu. O `gtr`
+infere do grafo: se a base de B é exatamente a ponta de A, então B foi
+empilhada sobre A, e o pai é o candidato mais próximo. Não depende de
+ferramenta nenhuma de PR empilhado; funciona para quem empilha com
+`git rebase --onto` desde sempre.
+
+**Onde isso muda uma decisão.** No exemplo acima, a listagem normal diria
+apenas "1 branch mergeada, use --clean para deletar". A árvore mostra que essa
+branch é a **base de uma pilha viva**, com duas camadas ainda abertas em cima —
+o mesmo estado, lido de outro jeito.
+
+Nos formatos estruturados a árvore vira uma tabela plana com a coluna `pai`,
+da base para o topo, que é o suficiente para um script remontar a hierarquia:
+
+```
+$ gtr branches --tree --format csv
+branch,pai,estado
+camada-1,main,squashada
+camada-2,camada-1,não mergeada
+camada-3,camada-2,não mergeada
+```
+
+`--tree` com `--clean` é recusado: a árvore lista de propósito o que não pode
+ser deletado.
 
 ### `gtr worktrees`
 
