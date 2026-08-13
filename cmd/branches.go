@@ -21,6 +21,7 @@ type branchesOptions struct {
 	base  string
 	clean bool
 	force bool
+	tree  bool
 }
 
 func newBranchesCommand(runner git.Runner) *cobra.Command {
@@ -38,6 +39,7 @@ func newBranchesCommand(runner git.Runner) *cobra.Command {
 	command.Flags().StringVar(&options.base, "base", "", "branch base; se omitida, é detectada automaticamente")
 	command.Flags().BoolVar(&options.clean, "clean", false, "deleta as branches mergeadas, pedindo confirmação")
 	command.Flags().BoolVar(&options.force, "force", false, "com --clean, força a deleção das squashadas e rebaseadas, que o git recusa apagar com -d")
+	command.Flags().BoolVar(&options.tree, "tree", false, "mostra todas as branches locais como árvore, cada uma sob aquela em que foi empilhada")
 	options.register(command)
 
 	return command
@@ -53,6 +55,10 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 		return fmt.Errorf("--format %s não vale com --clean; --clean é interativo e imprime o que deletou", chosen.format)
 	}
 
+	if options.tree && options.clean {
+		return fmt.Errorf("--tree não vale com --clean; a árvore mostra tudo, inclusive o que não pode ser deletado")
+	}
+
 	ctx := command.Context()
 	output, errorOutput := command.OutOrStdout(), command.ErrOrStderr()
 
@@ -63,6 +69,10 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 	base, err := repo.ResolveBase(ctx, options.base)
 	if err != nil {
 		return err
+	}
+
+	if options.tree {
+		return runBranchesTree(ctx, command, repo, chosen, options, base)
 	}
 
 	merged, err := repo.Merged(ctx, base)
@@ -112,6 +122,24 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 	}
 
 	return report(output, errorOutput, repo.Delete(ctx, candidates, options.force))
+}
+
+func runBranchesTree(ctx context.Context, command *cobra.Command, repo *branch.Repo, chosen rendering, options branchesOptions, base branch.Base) error {
+	layers, err := repo.Tree(ctx, base)
+	if err != nil {
+		return err
+	}
+
+	data := treeTable{base: base, layers: layers}
+
+	if chosen.format.Delimited() {
+		fmt.Fprintf(command.ErrOrStderr(), "Base: %s (%s)\n", base.Name, ui.DescribeSource(base.Source))
+	}
+	if chosen.format == format.Text {
+		fmt.Fprintf(command.OutOrStdout(), "Base: %s (%s)\n\n", base.Name, ui.DescribeSource(base.Source))
+	}
+
+	return emit(command.OutOrStdout(), options.output, "branches", chosen, data)
 }
 
 func emitBranches(command *cobra.Command, chosen rendering, options branchesOptions, data branchesTable) error {
