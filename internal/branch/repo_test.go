@@ -579,3 +579,26 @@ func TestDeleteForcesOnlyEquivalentBranches(t *testing.T) {
 		}
 	}
 }
+
+func TestMergedListsTheAncestorsBeforeTheEquivalents(t *testing.T) {
+	responses := combine(
+		listings("main", "main\nzz-ancestral", "main\naa-squashada\nzz-ancestral", "main"),
+		probe("main", "aa-squashada", gittest.Response{Output: "- probe-aa-squashada"}),
+	)
+
+	merged, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"})
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if len(merged) != 2 {
+		t.Fatalf("mergeadas = %+v, queria as duas", merged)
+	}
+
+	if merged[0].Name != "zz-ancestral" {
+		t.Errorf("primeira = %q; as mergeadas por ancestralidade vem antes das equivalentes, mesmo com nome maior em ordem alfabetica", merged[0].Name)
+	}
+	if merged[1].Name != "aa-squashada" {
+		t.Errorf("segunda = %q", merged[1].Name)
+	}
+}

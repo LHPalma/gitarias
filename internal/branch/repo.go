@@ -53,37 +53,53 @@ func (repo *Repo) localExists(ctx context.Context, name string) bool {
 }
 
 func (repo *Repo) Merged(ctx context.Context, base Base) ([]Branch, error) {
-	ancestors, err := repo.refs(ctx, "--merged", base.Name)
+	protected := repo.protected(ctx, base)
+
+	all, kinds, err := repo.classify(ctx, base, protected)
 	if err != nil {
 		return nil, err
 	}
-
-	protected := repo.protected(ctx, base)
-	contained := make(map[string]bool, len(ancestors))
 
 	var merged []Branch
-	for _, name := range ancestors {
-		contained[name] = true
-		if protected[name] {
-			continue
-		}
-		merged = append(merged, Branch{Name: name, Merge: MergedByAncestry})
-	}
-
-	all, err := repo.refs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, name := range all {
-		if protected[name] || contained[name] {
-			continue
-		}
-		if kind, equivalent := repo.equivalence(ctx, base, name); equivalent {
+	for _, byAncestry := range []bool{true, false} {
+		for _, name := range all {
+			kind, integrated := kinds[name]
+			if !integrated || protected[name] || (kind == MergedByAncestry) != byAncestry {
+				continue
+			}
 			merged = append(merged, Branch{Name: name, Merge: kind})
 		}
 	}
 
 	return merged, nil
+}
+
+func (repo *Repo) classify(ctx context.Context, base Base, protected map[string]bool) ([]string, map[string]MergeKind, error) {
+	ancestors, err := repo.refs(ctx, "--merged", base.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	kinds := make(map[string]MergeKind, len(ancestors))
+	for _, name := range ancestors {
+		kinds[name] = MergedByAncestry
+	}
+
+	all, err := repo.refs(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, name := range all {
+		if _, contained := kinds[name]; contained || protected[name] {
+			continue
+		}
+		if kind, equivalent := repo.equivalence(ctx, base, name); equivalent {
+			kinds[name] = kind
+		}
+	}
+
+	return all, kinds, nil
 }
 
 func (repo *Repo) refs(ctx context.Context, filters ...string) ([]string, error) {
