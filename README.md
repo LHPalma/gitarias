@@ -411,9 +411,30 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 ## Estado
 
 Os comandos `branches`, `worktrees`, `commits check` e `ignore list` estão no
-ar, os quatro com `--format`. Planejados: seleção interativa de quais branches
+ar, os quatro com `--format`, mais o `licenses`. Planejados: seleção interativa de quais branches
 apagar, `gtr split` para quebrar a árvore suja em vários commits,
 `gtr ignore add`, `stats`, `changelog` e arquivo de configuração opcional.
+
+## Licença
+
+MIT — ver [LICENSE](LICENSE). Use, modifique e redistribua, inclusive
+comercialmente; basta manter o aviso de copyright.
+
+O binário é estaticamente ligado, então o código das dependências viaja dentro
+dele, e as licenças delas exigem acompanhar a redistribuição. Elas estão em
+[THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES) e **embutidas no próprio
+binário**, o que mantém de pé a promessa de distribuir copiando um arquivo:
+
+```
+$ gtr licenses
+  github.com/spf13/cobra                Apache-2.0
+  github.com/spf13/pflag                BSD-3-Clause
+  github.com/inconshreveable/mousetrap  Apache-2.0    (só no binário Windows)
+```
+
+Nenhuma é copyleft e nenhuma impõe condição ao código do `gtr`. Um teste
+compara o `go.mod` com o arquivo e falha se entrar dependência cujas licenças
+não estejam ali.
 
 ## Contribuindo
 
