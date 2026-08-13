@@ -212,3 +212,72 @@ func (repo *Repo) Delete(ctx context.Context, branches []Branch, forceEquivalent
 
 	return results
 }
+
+func (repo *Repo) Tree(ctx context.Context, base Base) ([]Layer, error) {
+	protected := repo.protected(ctx, base)
+
+	all, kinds, err := repo.classify(ctx, base, protected)
+	if err != nil {
+		return nil, err
+	}
+
+	tips, err := repo.tips(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	layers := make([]Layer, 0, len(all))
+	for _, name := range all {
+		if name == base.Name {
+			continue
+		}
+
+		kind, integrated := kinds[name]
+		layers = append(layers, Layer{
+			Branch: Branch{Name: name, Merge: kind},
+			Parent: repo.parentOf(ctx, base, name, tips),
+			Merged: integrated,
+		})
+	}
+
+	return layers, nil
+}
+
+func (repo *Repo) tips(ctx context.Context) (map[string][]string, error) {
+	output, err := repo.runner.Run(ctx, "for-each-ref", "refs/heads/", "--format=%(objectname) %(refname:short)")
+	if err != nil {
+		return nil, err
+	}
+
+	tips := map[string][]string{}
+	for _, line := range strings.Split(output, "\n") {
+		sha, name, complete := strings.Cut(strings.TrimSpace(line), " ")
+		if !complete || sha == "" || name == "" {
+			continue
+		}
+		tips[sha] = append(tips[sha], name)
+	}
+
+	return tips, nil
+}
+
+func (repo *Repo) parentOf(ctx context.Context, base Base, name string, tips map[string][]string) string {
+	output, err := repo.runner.Run(ctx, "rev-list", name, "^"+base.Name)
+	if err != nil {
+		return ""
+	}
+
+	for _, line := range strings.Split(output, "\n") {
+		sha := strings.TrimSpace(line)
+		if sha == "" {
+			continue
+		}
+		for _, candidate := range tips[sha] {
+			if candidate != name && candidate != base.Name {
+				return candidate
+			}
+		}
+	}
+
+	return ""
+}

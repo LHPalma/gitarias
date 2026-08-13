@@ -23,3 +23,11 @@ func DescribeSource(source branch.BaseSource) string {
 		return "encontrada localmente"
 	}
 }
+
+func DescribeLayer(layer branch.Layer) string {
+	if !layer.Merged {
+		return "não mergeada"
+	}
+
+	return DescribeMerge(layer.Branch.Merge)
+}

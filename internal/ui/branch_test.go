@@ -45,3 +45,40 @@ func TestDescribeSource(t *testing.T) {
 		})
 	}
 }
+
+func TestDescribeLayer(t *testing.T) {
+	tests := []struct {
+		name  string
+		layer branch.Layer
+		want  string
+	}{
+		{
+			name:  "nao mergeada ignora o tipo de merge",
+			layer: branch.Layer{Branch: branch.Branch{Merge: branch.MergedBySquash}},
+			want:  "não mergeada",
+		},
+		{
+			name:  "mergeada por ancestralidade",
+			layer: branch.Layer{Merged: true, Branch: branch.Branch{Merge: branch.MergedByAncestry}},
+			want:  "mergeada",
+		},
+		{
+			name:  "squashada",
+			layer: branch.Layer{Merged: true, Branch: branch.Branch{Merge: branch.MergedBySquash}},
+			want:  "squashada",
+		},
+		{
+			name:  "rebaseada",
+			layer: branch.Layer{Merged: true, Branch: branch.Branch{Merge: branch.MergedByRebase}},
+			want:  "rebaseada",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := DescribeLayer(test.layer); got != test.want {
+				t.Errorf("rotulo = %q, queria %q", got, test.want)
+			}
+		})
+	}
+}
