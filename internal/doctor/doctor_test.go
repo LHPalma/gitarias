@@ -138,6 +138,131 @@ func TestDiagnoseWarnsWhenTheVersionIsUnreadable(t *testing.T) {
 	}
 }
 
+func TestDiagnoseReportsACleanTree(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	check := checkNamed(t, New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context()), "árvore")
+
+	if !check.Passed() {
+		t.Fatalf("checagem = %+v, queria ok", check)
+	}
+	if check.Detail == "" {
+		t.Error("o nome sozinho prometeria mais do que a checagem olha: ela nao diz nada sobre arquivo modificado")
+	}
+}
+
+func TestDiagnoseNamesEachOperationThatCanBeInProgress(t *testing.T) {
+	tests := []struct {
+		ref  string
+		want string
+	}{
+		{ref: "MERGE_HEAD", want: "merge"},
+		{ref: "CHERRY_PICK_HEAD", want: "cherry-pick"},
+		{ref: "REVERT_HEAD", want: "revert"},
+		{ref: "REBASE_HEAD", want: "rebase"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.want, func(t *testing.T) {
+			responses := insideRepo()
+			responses["rev-parse --verify --quiet "+test.ref] = gittest.Response{Output: "abc"}
+			commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+			check := checkNamed(t, New(gittest.NewRunner(responses), commands).Diagnose(t.Context()), "árvore")
+
+			if check.State != Warning {
+				t.Errorf("estado = %v; operacao parada nao quebra o gtr, mas muda o que o HEAD significa", check.State)
+			}
+			if !strings.Contains(check.Detail, test.want) {
+				t.Errorf("detalhe = %q, queria nomear a operacao", check.Detail)
+			}
+			if !strings.Contains(check.Hint, "git "+test.want+" --continue") {
+				t.Errorf("dica = %q, queria as saidas da propria operacao", check.Hint)
+			}
+		})
+	}
+}
+
+func applyingIn(t *testing.T, markers ...string) string {
+	t.Helper()
+
+	directory := filepath.Join(t.TempDir(), "rebase-apply")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatalf("nao consegui montar o diretorio: %v", err)
+	}
+	for _, marker := range markers {
+		if err := os.WriteFile(filepath.Join(directory, marker), nil, 0o644); err != nil {
+			t.Fatalf("nao consegui criar o marcador %q: %v", marker, err)
+		}
+	}
+
+	return directory
+}
+
+func TestDiagnoseNamesTheAmThatLeavesNoRef(t *testing.T) {
+	responses := insideRepo()
+	responses["rev-parse --git-path rebase-apply"] = gittest.Response{Output: applyingIn(t, "applying")}
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	check := checkNamed(t, New(gittest.NewRunner(responses), commands).Diagnose(t.Context()), "árvore")
+
+	if check.State != Warning {
+		t.Errorf("estado = %v; o am nao deixa ref, e sem olhar o diretorio ele passaria despercebido", check.State)
+	}
+	if !strings.Contains(check.Detail, "am") {
+		t.Errorf("detalhe = %q, queria nomear a operacao", check.Detail)
+	}
+	if !strings.Contains(check.Hint, "git am --abort") {
+		t.Errorf("dica = %q, queria as saidas da propria operacao", check.Hint)
+	}
+}
+
+func TestDiagnoseDoesNotMistakeTheApplyRebaseForAnAm(t *testing.T) {
+	responses := insideRepo()
+	responses["rev-parse --git-path rebase-apply"] = gittest.Response{Output: applyingIn(t, "onto")}
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	check := checkNamed(t, New(gittest.NewRunner(responses), commands).Diagnose(t.Context()), "árvore")
+
+	if !check.Passed() {
+		t.Errorf("checagem = %+v; o rebase --apply usa o mesmo diretorio, e quem o distingue e o arquivo applying", check)
+	}
+}
+
+func TestDiagnoseAsksTheGitWhereTheApplyDirectoryIs(t *testing.T) {
+	runner := gittest.NewRunner(insideRepo())
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	New(runner, commands).Diagnose(t.Context())
+
+	if !slices.Contains(runner.Calls, "rev-parse --git-path rebase-apply") {
+		t.Errorf("chamadas = %v; montar .git/rebase-apply na mao erra dentro de worktree e sob GIT_DIR", runner.Calls)
+	}
+}
+
+func TestDiagnoseKeepsTheRefOperationsAheadOfTheAm(t *testing.T) {
+	responses := insideRepo()
+	responses["rev-parse --verify --quiet REBASE_HEAD"] = gittest.Response{Output: "abc"}
+	responses["rev-parse --git-path rebase-apply"] = gittest.Response{Output: applyingIn(t, "applying")}
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	check := checkNamed(t, New(gittest.NewRunner(responses), commands).Diagnose(t.Context()), "árvore")
+
+	if !strings.Contains(check.Detail, "rebase") {
+		t.Errorf("detalhe = %q; havendo ref, ela e a resposta melhor, e o diretorio e ambiguo", check.Detail)
+	}
+}
+
+func TestDiagnoseSkipsTheTreeOutsideARepository(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	check := checkNamed(t, New(gittest.NewRunner(nil), commands).Diagnose(t.Context()), "árvore")
+
+	if check.State != Skipped {
+		t.Errorf("estado = %v; sem repositorio nao ha operacao a interromper", check.State)
+	}
+}
+
 func TestDiagnoseFindsTheScratchDirectoryWritable(t *testing.T) {
 	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
 

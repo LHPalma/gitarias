@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/LHPalma/gitarias/internal/branch"
@@ -33,6 +34,7 @@ func (doctor *Doctor) Diagnose(ctx context.Context) []Check {
 		doctor.git(ctx),
 		doctor.scratch(),
 		repository,
+		doctor.tree(ctx, repository),
 		doctor.identity(ctx),
 		doctor.base(ctx, repository),
 		doctor.gh(ctx),
@@ -119,6 +121,62 @@ func (doctor *Doctor) repository(ctx context.Context) Check {
 	}
 
 	return Check{Name: "repositório", State: Ok}
+}
+
+// tree relata se há uma operação de git no meio do caminho. A leitura é pelas
+// refs que o git mantém enquanto a operação dura, e não pela saída de git
+// status, que é prosa e muda entre versões. Devolve pulada fora de um
+// repositório.
+func (doctor *Doctor) tree(ctx context.Context, repository Check) Check {
+	if !repository.Passed() {
+		return Check{Name: "árvore", State: Skipped, Detail: "depende de estar num repositório"}
+	}
+
+	for _, pending := range operations {
+		if _, err := doctor.runner.Run(ctx, "rev-parse", "--verify", "--quiet", pending.ref); err == nil {
+			return interrupted(pending.name)
+		}
+	}
+
+	if doctor.applying(ctx) {
+		return interrupted("am")
+	}
+
+	return Check{Name: "árvore", State: Ok, Detail: "sem operação em curso"}
+}
+
+// applying relata o git am, a operação que não deixa ref: ela aplica texto de
+// patch, e não um commit a que uma ref pudesse apontar. O que fica é o
+// diretório rebase-apply com um arquivo applying dentro.
+//
+// O diretório sozinho não serve de sinal, porque o backend --apply do rebase
+// usa o mesmo e deixa lá um arquivo onto. O applying separa os dois, e o rebase
+// já foi reconhecido pela ref antes de chegar aqui.
+//
+// O caminho vem do próprio git em vez de ser montado como .git/rebase-apply,
+// que estaria errado dentro de um worktree e sob GIT_DIR. O git o devolve
+// relativo ao diretório corrente, que é de onde o os.Stat também parte.
+func (doctor *Doctor) applying(ctx context.Context) bool {
+	directory, err := doctor.runner.Run(ctx, "rev-parse", "--git-path", "rebase-apply")
+	if err != nil {
+		return false
+	}
+
+	_, err = os.Stat(filepath.Join(directory, "applying"))
+
+	return err == nil
+}
+
+// interrupted monta o aviso de uma operação parada. As quatro do git que têm
+// ref e o am aceitam as mesmas duas saídas, --continue e --abort.
+func interrupted(name string) Check {
+	return Check{
+		Name:   "árvore",
+		State:  Warning,
+		Detail: name + " em andamento",
+		Hint: "conclua com git " + name + " --continue ou desfaça com git " + name +
+			" --abort; no meio de uma operação o HEAD não é o que parece, e o gtr branches decide o que deletar a partir dele",
+	}
 }
 
 // identity relata a identidade de git em vigor, sem julgá-la: a precedência

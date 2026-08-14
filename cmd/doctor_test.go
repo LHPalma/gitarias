@@ -83,6 +83,7 @@ func TestDoctorReportsEverythingHealthy(t *testing.T) {
 	want := "  ok  git          2.43.0\n" +
 		"  ok  temporário\n" +
 		"  ok  repositório\n" +
+		"  ok  árvore       sem operação em curso\n" +
 		"  ok  identidade   Luiz Palma <luiz@exemplo.com>\n" +
 		"  ok  base         main, declarada pelo remoto\n" +
 		"  ok  gh           2.62.0\n"
@@ -232,6 +233,23 @@ func TestDoctorWarnsWhenTheScratchDirectoryRefusesWrites(t *testing.T) {
 	}
 }
 
+func TestDoctorWarnsAboutAnOperationInProgress(t *testing.T) {
+	responses := healthyRepository()
+	responses["rev-parse --verify --quiet REBASE_HEAD"] = gittest.Response{Output: "abc"}
+
+	result := diagnosingIn(t, responses, gitFound(), "doctor")
+
+	if result.err != nil {
+		t.Fatalf("rebase parado não quebra o gtr, só muda o que o HEAD significa; veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "rebase em andamento") {
+		t.Errorf("saída = %q, queria nomear a operação", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "git rebase --continue") {
+		t.Errorf("saída = %q, queria as duas saídas da operação", result.stdout)
+	}
+}
+
 func TestDoctorJSON(t *testing.T) {
 	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor", "--format", "json")
 
@@ -240,14 +258,14 @@ func TestDoctorJSON(t *testing.T) {
 		t.Fatalf("a saída tem de ser json válido, veio %q: %v", result.stdout, err)
 	}
 
-	if len(document.Checks) != 6 {
-		t.Fatalf("checagens = %+v, queria as seis", document.Checks)
+	if len(document.Checks) != 7 {
+		t.Fatalf("checagens = %+v, queria as sete", document.Checks)
 	}
 	if document.Checks[0] != (checkRecord{Check: "git", State: "ok", Detail: "2.43.0"}) {
 		t.Errorf("registro = %+v", document.Checks[0])
 	}
-	if document.Checks[4] != (checkRecord{Check: "base", State: "ok", Detail: "main, declarada pelo remoto"}) {
-		t.Errorf("registro da base = %+v", document.Checks[4])
+	if document.Checks[5] != (checkRecord{Check: "base", State: "ok", Detail: "main, declarada pelo remoto"}) {
+		t.Errorf("registro da base = %+v", document.Checks[5])
 	}
 }
 
@@ -279,6 +297,7 @@ func TestDoctorCSV(t *testing.T) {
 		"git,ok,2.43.0,\n" +
 		"temporário,ok,,\n" +
 		"repositório,ok,,\n" +
+		"árvore,ok,sem operação em curso,\n" +
 		"identidade,ok,Luiz Palma <luiz@exemplo.com>,\n" +
 		"base,ok,\"main, declarada pelo remoto\",\n" +
 		"gh,ok,2.62.0,\n"
