@@ -86,9 +86,10 @@ func (doctor *Doctor) repository(ctx context.Context) Check {
 	return Check{Name: "repositório", State: Ok}
 }
 
-// identity relata a identidade de git em vigor em vez de julgá-la. Só o git
-// resolve a precedência entre o config local e o global, e o gtr não tem como
-// saber qual das duas o autor queria; quem lê a linha reconhece na hora.
+// identity relata a identidade de git em vigor, sem julgá-la: a precedência
+// entre as configurações local e global é resolvida pelo próprio git. Devolve
+// aviso quando user.name ou user.email está ausente ou vazio, nomeando as
+// chaves que faltam.
 func (doctor *Doctor) identity(ctx context.Context) Check {
 	name := doctor.setting(ctx, "user.name")
 	email := doctor.setting(ctx, "user.email")
@@ -122,14 +123,10 @@ func (doctor *Doctor) setting(ctx context.Context, key string) string {
 	return value
 }
 
-// base informa de onde a base veio, e não só qual é. A cadeia de resolução tem
-// um nível em que o remoto declara a padrão e outro em que o gtr chuta entre
-// main e master; os dois devolvem um nome, e só o segundo pode estar errado
-// sem que nada pareça errado.
-//
-// O texto é escrito aqui em vez de reusar o ui.DescribeSource porque nenhum
-// domínio importa o internal/ui. As duas frases também não dizem a mesma
-// coisa: o branches nomeia o nível da cadeia, o doctor declara a confiança.
+// base relata a branch base e a origem dela. Devolve aviso quando o nome foi
+// obtido por tentativa entre main e master, e não declarado por
+// refs/remotes/origin/HEAD: só nesse caso o resultado pode estar errado sem
+// que a resolução tenha falhado. Devolve pulada fora de um repositório.
 func (doctor *Doctor) base(ctx context.Context, repository Check) Check {
 	if !repository.Passed() {
 		return Check{Name: "base", State: Skipped, Detail: "depende de estar num repositório"}
