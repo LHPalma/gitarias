@@ -202,6 +202,19 @@ func TestDoctorStrictFailsOnAGuessedBase(t *testing.T) {
 	}
 }
 
+func TestDoctorCountsOneFailureInTheSingular(t *testing.T) {
+	outcomes := []exectest.Response{{Err: errors.New("executable file not found in $PATH")}}
+
+	result := diagnosing(t, outcomes, "doctor")
+
+	if result.err == nil {
+		t.Fatal("sem git o doctor tem de sair com 1")
+	}
+	if !strings.Contains(result.err.Error(), "1 checagem falhou") {
+		t.Errorf("erro = %v; \"1 checagem(ns) falharam\" é o que se escreve para não decidir", result.err)
+	}
+}
+
 func TestDoctorJSON(t *testing.T) {
 	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor", "--format", "json")
 

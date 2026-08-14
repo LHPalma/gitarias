@@ -104,7 +104,8 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 
 	candidates := deletable(free, options.force)
 	if equivalent := len(free) - len(candidates); equivalent > 0 {
-		fmt.Fprintf(output, "%d branch(es) ficam de fora: o git recusa apagá-las com -d. Use --force para forçar.\n", equivalent)
+		fmt.Fprintf(output, "%d %s de fora: o git recusa apagá-las com -d. Use --force para forçar.\n",
+			equivalent, ui.Plural(equivalent, "branch fica", "branches ficam"))
 	}
 
 	if len(candidates) == 0 {
@@ -112,7 +113,9 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 		return nil
 	}
 
-	confirmed, err := confirm(command.InOrStdin(), output, fmt.Sprintf("Deletar %d branch(es)? [y/N] ", len(candidates)))
+	question := fmt.Sprintf("Deletar %d %s? [y/N] ", len(candidates), ui.Plural(len(candidates), "branch", "branches"))
+
+	confirmed, err := confirm(command.InOrStdin(), output, question)
 	if err != nil {
 		return err
 	}
@@ -180,7 +183,8 @@ func splitByWorktree(merged []branch.Branch, paths map[string]string) (free []br
 }
 
 func printHeld(output io.Writer, held []heldBranch) error {
-	fmt.Fprintf(output, "%d branch(es) em uso por outro working tree, fora da lista:\n", len(held))
+	fmt.Fprintf(output, "%d %s em uso por outro working tree, fora da lista:\n",
+		len(held), ui.Plural(len(held), "branch", "branches"))
 
 	writer := columns(output)
 	for _, entry := range held {
@@ -259,7 +263,7 @@ func report(output io.Writer, errorOutput io.Writer, results []branch.DeleteResu
 	}
 
 	if failed > 0 {
-		return fmt.Errorf("%d branch(es) não puderam ser deletadas", failed)
+		return fmt.Errorf("%d %s", failed, ui.Plural(failed, "branch não pôde ser deletada", "branches não puderam ser deletadas"))
 	}
 	return nil
 }

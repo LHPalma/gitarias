@@ -64,7 +64,10 @@ func (data checkedTable) text(output io.Writer) error {
 		return err
 	}
 
-	if _, err := fmt.Fprintf(output, "Verificando %d commit(s) sobre %s.\n\n", len(data.results), data.base); err != nil {
+	header := fmt.Sprintf("Verificando %d %s sobre %s.\n\n",
+		len(data.results), ui.Plural(len(data.results), "commit", "commits"), data.base)
+
+	if _, err := fmt.Fprint(output, header); err != nil {
 		return err
 	}
 
@@ -121,6 +124,11 @@ func outcomeWidth(results []commits.Result) int {
 func (data checkedTable) printTally(output io.Writer) error {
 	if data.failed() > 0 {
 		return nil
+	}
+
+	if len(data.results) == 1 {
+		_, err := fmt.Fprintln(output, "\nO commit se sustenta sozinho.")
+		return err
 	}
 
 	_, err := fmt.Fprintf(output, "\nOs %d se sustentam sozinhos.\n", len(data.results))

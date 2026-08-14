@@ -6,6 +6,7 @@ import (
 	"github.com/LHPalma/gitarias/internal/doctor"
 	"github.com/LHPalma/gitarias/internal/exec"
 	"github.com/LHPalma/gitarias/internal/git"
+	"github.com/LHPalma/gitarias/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +47,7 @@ func runDoctor(command *cobra.Command, examiner *doctor.Doctor, options doctorOp
 	}
 
 	if failed := data.failed(options.strict); failed > 0 {
-		return fmt.Errorf("%d checagem(ns) falharam", failed)
+		return fmt.Errorf("%d %s", failed, ui.Plural(failed, "checagem falhou", "checagens falharam"))
 	}
 
 	return nil

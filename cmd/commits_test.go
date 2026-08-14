@@ -32,6 +32,10 @@ func threeCommits() map[string]gittest.Response {
 			"ccccccc3333333333333333333333333333333\x00terceiro")
 }
 
+func oneCommit() map[string]gittest.Response {
+	return history("main", "aaaaaaa1111111111111111111111111111111\x00primeiro")
+}
+
 type extractingRunner struct {
 	*gittest.Runner
 	t *testing.T
@@ -373,10 +377,29 @@ func TestCommitsCheckCSV(t *testing.T) {
 	}
 }
 
+func TestCommitsCheckSpeaksOfOneCommitInTheSingular(t *testing.T) {
+	result := checking(t, oneCommit(), passing(1), "commits", "check", "main", "--", "go", "test")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	for _, hedged := range []string{"commit(s)", "Os 1"} {
+		if strings.Contains(result.stdout, hedged) {
+			t.Errorf("saída = %q; %q é o que se escreve para não decidir, e chega na tela como decisão", result.stdout, hedged)
+		}
+	}
+	if !strings.Contains(result.stdout, "Verificando 1 commit sobre main.") {
+		t.Errorf("saída = %q, queria a abertura no singular", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "O commit se sustenta sozinho.") {
+		t.Errorf("saída = %q, queria o fecho no singular", result.stdout)
+	}
+}
+
 func TestCommitsCheckSendsTheHeadlineToStderrOnTheDelimitedFormats(t *testing.T) {
 	result := checking(t, threeCommits(), passing(3), "commits", "check", "main", "--format", "csv", "--", "go", "test")
 
-	if !strings.Contains(result.stderr, "Verificando 3 commit(s) sobre main.") {
+	if !strings.Contains(result.stderr, "Verificando 3 commits sobre main.") {
 		t.Errorf("stderr = %q, o metadado não pode se perder", result.stderr)
 	}
 	if strings.Contains(result.stdout, "Verificando") {

@@ -6,6 +6,7 @@ import (
 	"github.com/LHPalma/gitarias/internal/commits"
 	"github.com/LHPalma/gitarias/internal/exec"
 	"github.com/LHPalma/gitarias/internal/git"
+	"github.com/LHPalma/gitarias/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -108,7 +109,8 @@ func extractor(runner git.Runner, worktree bool) commits.Extractor {
 
 func emitChecked(command *cobra.Command, chosen rendering, options commitsCheckOptions, data checkedTable) error {
 	if chosen.format.Delimited() {
-		fmt.Fprintf(command.ErrOrStderr(), "Verificando %d commit(s) sobre %s.\n", len(data.results), data.base)
+		fmt.Fprintf(command.ErrOrStderr(), "Verificando %d %s sobre %s.\n",
+			len(data.results), ui.Plural(len(data.results), "commit", "commits"), data.base)
 	}
 
 	return emit(command.OutOrStdout(), options.output, "commits", chosen, data)
@@ -120,5 +122,10 @@ func failure(data checkedTable) error {
 		return nil
 	}
 
-	return fmt.Errorf("%d de %d commit(s) não se sustenta(m) sozinho(s)", failed, len(data.results))
+	if failed == 1 {
+		return fmt.Errorf("1 de %d %s não se sustenta sozinho",
+			len(data.results), ui.Plural(len(data.results), "commit", "commits"))
+	}
+
+	return fmt.Errorf("%d de %d commits não se sustentam sozinhos", failed, len(data.results))
 }

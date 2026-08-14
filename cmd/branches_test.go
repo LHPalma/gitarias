@@ -47,11 +47,11 @@ func TestConfirm(t *testing.T) {
 func TestConfirmWritesThePrompt(t *testing.T) {
 	output := &bytes.Buffer{}
 
-	if _, err := confirm(strings.NewReader("n\n"), output, "Deletar 3 branch(es)? [y/N] "); err != nil {
+	if _, err := confirm(strings.NewReader("n\n"), output, "Deletar 3 branches? [y/N] "); err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
 
-	if output.String() != "Deletar 3 branch(es)? [y/N] " {
+	if output.String() != "Deletar 3 branches? [y/N] " {
 		t.Errorf("prompt = %q, queria o texto pedido sem alteração", output.String())
 	}
 }
@@ -200,6 +200,14 @@ func TestPrintMergedPropagatesWriteError(t *testing.T) {
 	}
 }
 
+func TestBranchesAsksAboutOneBranchInTheSingular(t *testing.T) {
+	result := execute(t, repository("main", "main\numa", "main\numa", "main"), "n\n", "branches", "--clean")
+
+	if !strings.Contains(result.stdout, "Deletar 1 branch? [y/N] ") {
+		t.Errorf("saída = %q, queria a pergunta no singular", result.stdout)
+	}
+}
+
 func TestReport(t *testing.T) {
 	falha := errors.New("cannot delete branch 'presa' used by worktree")
 	output, errorOutput := &bytes.Buffer{}, &bytes.Buffer{}
@@ -213,7 +221,7 @@ func TestReport(t *testing.T) {
 	if err == nil {
 		t.Fatal("uma falha individual tem de virar erro do comando")
 	}
-	if !strings.Contains(err.Error(), "1 branch(es)") {
+	if !strings.Contains(err.Error(), "1 branch não pôde ser deletada") {
 		t.Errorf("erro %q deveria contar as falhas", err)
 	}
 
