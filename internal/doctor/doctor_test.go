@@ -2,6 +2,8 @@ package doctor
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -133,6 +135,59 @@ func TestDiagnoseWarnsWhenTheVersionIsUnreadable(t *testing.T) {
 	}
 	if check.Hint == "" {
 		t.Error("aviso tem de dizer o que se esperava")
+	}
+}
+
+func TestDiagnoseFindsTheScratchDirectoryWritable(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	check := checkNamed(t, New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context()), "temporário")
+
+	if !check.Passed() {
+		t.Fatalf("checagem = %+v, queria ok", check)
+	}
+	if check.Detail != "" {
+		t.Errorf("detalhe = %q; checagem sem nada a dizer nao diz nada", check.Detail)
+	}
+}
+
+func TestDiagnoseLeavesNothingBehindInTheScratchDirectory(t *testing.T) {
+	scratch := t.TempDir()
+	t.Setenv("TMPDIR", scratch)
+
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+	New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context())
+
+	entries, err := os.ReadDir(scratch)
+	if err != nil {
+		t.Fatalf("nao consegui ler o diretorio: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("sobrou %v; sondar o temporario nao pode deixar lixo nele", entries)
+	}
+}
+
+func TestDiagnoseWarnsWhenTheScratchDirectoryRefusesWrites(t *testing.T) {
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "nao-existe"))
+
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	check := checkNamed(t, New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context()), "temporário")
+
+	if check.State != Warning {
+		t.Errorf("estado = %v; so o commits check precisa do temporario, entao e aviso", check.State)
+	}
+	if !strings.Contains(check.Detail, "nao-existe") {
+		t.Errorf("detalhe = %q, queria o caminho que foi tentado", check.Detail)
+	}
+	if !strings.Contains(check.Hint, "TMPDIR") {
+		t.Errorf("dica = %q, queria a variavel que muda o caminho", check.Hint)
+	}
+}
+
+func TestReasonKeepsAnErrorThatIsNotAboutAPath(t *testing.T) {
+	if got := reason(errors.New("qualquer outra coisa")); got != "qualquer outra coisa" {
+		t.Errorf("motivo = %q; erro sem caminho sai inteiro", got)
 	}
 }
 

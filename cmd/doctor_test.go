@@ -81,6 +81,7 @@ func TestDoctorReportsEverythingHealthy(t *testing.T) {
 	}
 
 	want := "  ok  git          2.43.0\n" +
+		"  ok  temporário\n" +
 		"  ok  repositório\n" +
 		"  ok  identidade   Luiz Palma <luiz@exemplo.com>\n" +
 		"  ok  base         main, declarada pelo remoto\n" +
@@ -215,6 +216,22 @@ func TestDoctorCountsOneFailureInTheSingular(t *testing.T) {
 	}
 }
 
+func TestDoctorWarnsWhenTheScratchDirectoryRefusesWrites(t *testing.T) {
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "nao-existe"))
+
+	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor")
+
+	if result.err != nil {
+		t.Fatalf("só o commits check precisa do temporário, então não derruba; veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "temporário") || !strings.Contains(result.stdout, "aviso") {
+		t.Errorf("saída = %q, queria o aviso do temporário", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "TMPDIR") {
+		t.Errorf("saída = %q, queria a variável que muda o caminho", result.stdout)
+	}
+}
+
 func TestDoctorJSON(t *testing.T) {
 	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor", "--format", "json")
 
@@ -223,14 +240,14 @@ func TestDoctorJSON(t *testing.T) {
 		t.Fatalf("a saída tem de ser json válido, veio %q: %v", result.stdout, err)
 	}
 
-	if len(document.Checks) != 5 {
-		t.Fatalf("checagens = %+v, queria as cinco", document.Checks)
+	if len(document.Checks) != 6 {
+		t.Fatalf("checagens = %+v, queria as seis", document.Checks)
 	}
 	if document.Checks[0] != (checkRecord{Check: "git", State: "ok", Detail: "2.43.0"}) {
 		t.Errorf("registro = %+v", document.Checks[0])
 	}
-	if document.Checks[3] != (checkRecord{Check: "base", State: "ok", Detail: "main, declarada pelo remoto"}) {
-		t.Errorf("registro da base = %+v", document.Checks[3])
+	if document.Checks[4] != (checkRecord{Check: "base", State: "ok", Detail: "main, declarada pelo remoto"}) {
+		t.Errorf("registro da base = %+v", document.Checks[4])
 	}
 }
 
@@ -260,6 +277,7 @@ func TestDoctorCSV(t *testing.T) {
 
 	want := "checagem,estado,detalhe,como resolver\n" +
 		"git,ok,2.43.0,\n" +
+		"temporário,ok,,\n" +
 		"repositório,ok,,\n" +
 		"identidade,ok,Luiz Palma <luiz@exemplo.com>,\n" +
 		"base,ok,\"main, declarada pelo remoto\",\n" +

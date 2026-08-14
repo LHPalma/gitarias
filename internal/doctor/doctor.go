@@ -2,6 +2,9 @@ package doctor
 
 import (
 	"context"
+	"errors"
+	"io/fs"
+	"os"
 	"strings"
 
 	"github.com/LHPalma/gitarias/internal/branch"
@@ -28,11 +31,43 @@ func (doctor *Doctor) Diagnose(ctx context.Context) []Check {
 
 	return []Check{
 		doctor.git(ctx),
+		doctor.scratch(),
 		repository,
 		doctor.identity(ctx),
 		doctor.base(ctx, repository),
 		doctor.gh(ctx),
 	}
+}
+
+// scratch relata se o diretório de temporários aceita escrita. A verificação é
+// criar um diretório lá e apagá-lo em seguida, e não inspecionar permissões:
+// montagem somente leitura, disco cheio e ACL negam a escrita sem que o modo do
+// arquivo mude.
+func (doctor *Doctor) scratch() Check {
+	workspace, err := os.MkdirTemp("", "gtr-doctor-")
+	if err != nil {
+		return Check{
+			Name:   "temporário",
+			State:  Warning,
+			Detail: os.TempDir() + ": " + reason(err),
+			Hint:   "só o gtr commits check precisa dele, para materializar a árvore de cada commit; aponte a variável TMPDIR para um diretório gravável e com espaço",
+		}
+	}
+	defer os.RemoveAll(workspace)
+
+	return Check{Name: "temporário", State: Ok}
+}
+
+// reason devolve o motivo que o sistema operacional deu, sem o caminho que a
+// stdlib prefixa: o caminho já é dito à parte, e o sufixo aleatório do nome do
+// diretório só atrapalha a leitura.
+func reason(err error) string {
+	var pathError *fs.PathError
+	if errors.As(err, &pathError) {
+		return pathError.Err.Error()
+	}
+
+	return err.Error()
 }
 
 func (doctor *Doctor) git(ctx context.Context) Check {
