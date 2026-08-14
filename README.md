@@ -311,6 +311,32 @@ escreve.**
 
 A saída é 1 se qualquer commit falhar, 0 se todos passarem.
 
+### `gtr doctor`
+
+Confere se a máquina tem o que o `gtr` precisa.
+
+```
+$ gtr doctor
+  ok  git 2.43.0
+```
+
+```
+$ gtr doctor
+  falta  git não encontrado no PATH
+         o gtr orquestra o git da máquina e não funciona sem ele; instale em https://git-scm.com
+erro: 1 checagem(ns) falharam
+```
+
+Sai 1 se alguma checagem falhar. **É o único comando que não precisa de um
+repositório git** — ele diagnostica a máquina, não o repositório, e roda de
+qualquer diretório.
+
+Aceita `--format`, `--output`, `--separator` e `--no-header` como os demais. No
+`json` o `state` é token — `ok`, `warning`, `failure` —, e no `csv` é o rótulo
+de tela.
+
+Hoje ele checa só o `git`. A lista cresce conforme o `gtr` ganhar dependências.
+
 ### `gtr ignore list`
 
 Lista o que está sendo ignorado e **por qual regra** — pergunta que o git só
@@ -452,7 +478,7 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 ## Estado
 
 Os comandos `branches`, `worktrees`, `commits check` e `ignore list` estão no
-ar, os quatro com `--format`, mais o `licenses`. Planejados: seleção interativa de quais branches
+ar, os quatro com `--format`, mais o `licenses` e o `doctor`. Planejados: seleção interativa de quais branches
 apagar, `gtr split` para quebrar a árvore suja em vários commits,
 `gtr ignore add`, `stats`, `changelog` e arquivo de configuração opcional.
 
