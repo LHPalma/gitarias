@@ -38,7 +38,17 @@ func diagnosingIn(t *testing.T, responses map[string]gittest.Response, outcomes 
 }
 
 func gitFound() []exectest.Response {
-	return []exectest.Response{{Result: exec.Result{Output: "git version 2.43.0"}}}
+	return []exectest.Response{
+		{Result: exec.Result{Output: "git version 2.43.0"}},
+		{Result: exec.Result{Output: "gh version 2.62.0 (2024-11-14)"}},
+	}
+}
+
+func withoutGh() []exectest.Response {
+	return []exectest.Response{
+		{Result: exec.Result{Output: "git version 2.43.0"}},
+		{Err: errors.New("executable file not found in $PATH")},
+	}
 }
 
 func healthyRepository() map[string]gittest.Response {
@@ -58,7 +68,8 @@ func TestDoctorReportsEverythingHealthy(t *testing.T) {
 
 	want := "  ok  git          2.43.0\n" +
 		"  ok  repositório\n" +
-		"  ok  base         main\n"
+		"  ok  base         main\n" +
+		"  ok  gh           2.62.0\n"
 
 	if result.stdout != want {
 		t.Errorf("saída:\n%q\nqueria:\n%q", result.stdout, want)
@@ -141,8 +152,8 @@ func TestDoctorJSON(t *testing.T) {
 		t.Fatalf("a saída tem de ser json válido, veio %q: %v", result.stdout, err)
 	}
 
-	if len(document.Checks) != 3 {
-		t.Fatalf("checagens = %+v, queria as três", document.Checks)
+	if len(document.Checks) != 4 {
+		t.Fatalf("checagens = %+v, queria as quatro", document.Checks)
 	}
 	if document.Checks[0] != (checkRecord{Check: "git", State: "ok", Detail: "2.43.0"}) {
 		t.Errorf("registro = %+v", document.Checks[0])
@@ -179,7 +190,8 @@ func TestDoctorCSV(t *testing.T) {
 	want := "checagem,estado,detalhe,como resolver\n" +
 		"git,ok,2.43.0,\n" +
 		"repositório,ok,,\n" +
-		"base,ok,main,\n"
+		"base,ok,main,\n" +
+		"gh,ok,2.62.0,\n"
 
 	if result.stdout != want {
 		t.Errorf("saída = %q, queria %q", result.stdout, want)
@@ -289,5 +301,24 @@ func TestSoundcheckStaysOutOfTheRootHelp(t *testing.T) {
 	}
 	if !strings.Contains(result.stdout, "doctor") {
 		t.Errorf("saída = %q, o nome de verdade continua anunciado", result.stdout)
+	}
+}
+
+func TestDoctorWarnsWithoutGhWithoutFailing(t *testing.T) {
+	result := diagnosingIn(t, healthyRepository(), withoutGh(), "doctor")
+
+	if result.err != nil {
+		t.Fatalf("o gtr inteiro funciona sem gh; só os comandos de PR não, e eles ainda nem existem. Veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "cli.github.com") {
+		t.Errorf("saída = %q, queria onde instalar", result.stdout)
+	}
+}
+
+func TestDoctorStrictFailsWithoutGh(t *testing.T) {
+	result := diagnosingIn(t, healthyRepository(), withoutGh(), "doctor", "--strict")
+
+	if result.err == nil {
+		t.Fatal("com --strict o aviso do gh derruba, que é o ponto de um portão de CI")
 	}
 }

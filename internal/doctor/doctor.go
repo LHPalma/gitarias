@@ -9,7 +9,10 @@ import (
 	"github.com/LHPalma/gitarias/internal/git"
 )
 
-const gitHomepage = "https://git-scm.com"
+const (
+	gitHomepage = "https://git-scm.com"
+	ghHomepage  = "https://cli.github.com"
+)
 
 type Doctor struct {
 	runner   git.Runner
@@ -27,6 +30,7 @@ func (doctor *Doctor) Diagnose(ctx context.Context) []Check {
 		doctor.git(ctx),
 		repository,
 		doctor.base(ctx, repository),
+		doctor.gh(ctx),
 	}
 }
 
@@ -79,8 +83,39 @@ func (doctor *Doctor) base(ctx context.Context, repository Check) Check {
 	return Check{Name: "base", State: Ok, Detail: resolved.Name}
 }
 
+func (doctor *Doctor) gh(ctx context.Context) Check {
+	result, err := doctor.commands.Run(ctx, "", "gh", "--version")
+	if err != nil {
+		return Check{
+			Name:   "gh",
+			State:  Warning,
+			Detail: "não encontrado no PATH",
+			Hint:   "só é preciso para os comandos de PR; o resto do gtr funciona sem ele. Instale em " + ghHomepage,
+		}
+	}
+
+	if !result.Passed() {
+		return Check{
+			Name:   "gh",
+			State:  Warning,
+			Detail: "está no PATH mas não roda",
+			Hint:   strings.TrimSpace(result.Output),
+		}
+	}
+
+	return Check{Name: "gh", State: Ok, Detail: version(result.Output)}
+}
+
 func version(output string) string {
-	fields := strings.Fields(strings.TrimSpace(output))
+	line, _, _ := strings.Cut(strings.TrimSpace(output), "\n")
+
+	fields := strings.Fields(line)
+	for index, field := range fields {
+		if field == "version" && index+1 < len(fields) {
+			return fields[index+1]
+		}
+	}
+
 	if len(fields) == 0 {
 		return ""
 	}

@@ -181,3 +181,88 @@ func TestDiagnoseWarnsWhenTheBaseIsNotDeterminable(t *testing.T) {
 		t.Error("aviso tem de dizer a saida de emergencia")
 	}
 }
+
+func healthy() []exectest.Response {
+	return []exectest.Response{
+		{Result: exec.Result{Output: "git version 2.43.0"}},
+		{Result: exec.Result{Output: "gh version 2.62.0 (2024-11-14)\nhttps://github.com/cli/cli/releases/tag/v2.62.0"}},
+	}
+}
+
+func TestDiagnoseFindsGh(t *testing.T) {
+	commands := exectest.NewRunner(healthy()...)
+
+	check := checkNamed(t, New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context()), "gh")
+
+	if !check.Passed() {
+		t.Fatalf("checagem = %+v, queria ok", check)
+	}
+	if check.Detail != "2.62.0" {
+		t.Errorf("detalhe = %q; o gh põe a data e a url depois da versao, e nada disso e versao", check.Detail)
+	}
+}
+
+func TestDiagnoseAsksTheGhOnThePath(t *testing.T) {
+	commands := exectest.NewRunner(healthy()...)
+
+	New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context())
+
+	call := commands.Calls[1]
+	if call.Name != "gh" || strings.Join(call.Args, " ") != "--version" {
+		t.Errorf("chamada = %+v, queria gh --version", call)
+	}
+}
+
+func TestDiagnoseWarnsWithoutGh(t *testing.T) {
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}},
+		exectest.Response{Err: errors.New("executable file not found in $PATH")},
+	)
+
+	check := checkNamed(t, New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context()), "gh")
+
+	if check.State != Warning {
+		t.Errorf("estado = %v; sem gh o resto do gtr funciona inteiro, entao e aviso e nao falha", check.State)
+	}
+	if check.Hint == "" {
+		t.Error("aviso tem de dizer como resolver")
+	}
+}
+
+func TestDiagnoseWarnsAboutAGhThatDoesNotRun(t *testing.T) {
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}},
+		exectest.Response{Result: exec.Result{Code: 126, Output: "permission denied"}},
+	)
+
+	check := checkNamed(t, New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context()), "gh")
+
+	if check.State != Warning {
+		t.Errorf("estado = %v, queria aviso", check.State)
+	}
+	if !strings.Contains(check.Hint, "permission denied") {
+		t.Errorf("dica = %q; a saida do proprio gh diz mais que qualquer texto meu", check.Hint)
+	}
+}
+
+func TestVersionOfTheTwoFormats(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   string
+	}{
+		{name: "git", output: "git version 2.43.0", want: "2.43.0"},
+		{name: "gh com data e url", output: "gh version 2.62.0 (2024-11-14)\nhttps://github.com/cli/cli", want: "2.62.0"},
+		{name: "sem a palavra version cai no ultimo campo", output: "2.43.0", want: "2.43.0"},
+		{name: "version no fim nao estoura o slice", output: "alguma coisa version", want: "version"},
+		{name: "vazio", output: "  \n ", want: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := version(test.output); got != test.want {
+				t.Errorf("versao = %q, queria %q", got, test.want)
+			}
+		})
+	}
+}

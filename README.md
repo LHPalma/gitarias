@@ -320,6 +320,7 @@ $ gtr doctor
   ok  git          2.43.0
   ok  repositório
   ok  base         main
+  ok  gh           2.62.0
 ```
 
 | Flag | Padrão | Efeito |
@@ -360,6 +361,18 @@ $ gtr doctor        # num repositório sem main, master nem origin/HEAD
 
 Sem `--strict` isso sai 0. Com `--strict`, sai 1 — é a flag para quem quer que
 o portão de CI reclame de tudo que não está redondo.
+
+**O `gh` é opcional e sempre será.** Ele só interessa aos comandos de PR; o
+resto do `gtr` funciona sem ele, então a ausência é aviso e não falha:
+
+```
+$ gtr doctor
+  ok     git          2.43.0
+  ok     repositório
+  ok     base         main
+  aviso  gh           não encontrado no PATH
+                      só é preciso para os comandos de PR; o resto do gtr funciona sem ele. Instale em https://cli.github.com
+```
 
 No `json` o `state` é token — `ok`, `warning`, `failure`, `skipped` —, e no
 `csv` é o rótulo de tela.
