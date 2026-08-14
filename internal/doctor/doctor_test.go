@@ -276,8 +276,47 @@ func TestDiagnoseFindsTheBase(t *testing.T) {
 	if !base.Passed() {
 		t.Fatalf("checagem = %+v, queria ok", base)
 	}
-	if base.Detail != "main" {
+	if !strings.Contains(base.Detail, "main") {
 		t.Errorf("detalhe = %q, queria o nome da base", base.Detail)
+	}
+	if !strings.Contains(base.Detail, "remoto") {
+		t.Errorf("detalhe = %q; base que o remoto declarou nao vale o mesmo que base chutada, e tem de dizer qual e", base.Detail)
+	}
+}
+
+func TestDiagnoseWarnsWhenTheBaseWasGuessedByName(t *testing.T) {
+	responses := insideRepo()
+	delete(responses, "symbolic-ref --short refs/remotes/origin/HEAD")
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	base := checkNamed(t, New(gittest.NewRunner(responses), commands).Diagnose(t.Context()), "base")
+
+	if base.State != Warning {
+		t.Errorf("estado = %v; sem o origin/HEAD o gtr chuta, e chute que parece certo e o pior modo de falha", base.State)
+	}
+	if !strings.Contains(base.Detail, "main") {
+		t.Errorf("detalhe = %q, o nome nao pode sumir so porque foi chutado", base.Detail)
+	}
+	if !strings.Contains(base.Hint, "fetch") {
+		t.Errorf("dica = %q; a causa comum e clone sem refs de rastreamento, e o conserto e um comando so", base.Hint)
+	}
+}
+
+func TestDiagnoseSeparatesAGuessedBaseFromAnUndeterminableOne(t *testing.T) {
+	guessed := insideRepo()
+	delete(guessed, "symbolic-ref --short refs/remotes/origin/HEAD")
+
+	absent := map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Output: "true"}}
+
+	commands := func() *exectest.Runner {
+		return exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+	}
+
+	first := checkNamed(t, New(gittest.NewRunner(guessed), commands()).Diagnose(t.Context()), "base")
+	second := checkNamed(t, New(gittest.NewRunner(absent), commands()).Diagnose(t.Context()), "base")
+
+	if first.Detail == second.Detail {
+		t.Errorf("detalhe = %q nos dois; ter chutado um nome e nao ter nome nenhum sao situacoes diferentes", first.Detail)
 	}
 }
 

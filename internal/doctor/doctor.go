@@ -122,6 +122,14 @@ func (doctor *Doctor) setting(ctx context.Context, key string) string {
 	return value
 }
 
+// base informa de onde a base veio, e não só qual é. A cadeia de resolução tem
+// um nível em que o remoto declara a padrão e outro em que o gtr chuta entre
+// main e master; os dois devolvem um nome, e só o segundo pode estar errado
+// sem que nada pareça errado.
+//
+// O texto é escrito aqui em vez de reusar o ui.DescribeSource porque nenhum
+// domínio importa o internal/ui. As duas frases também não dizem a mesma
+// coisa: o branches nomeia o nível da cadeia, o doctor declara a confiança.
 func (doctor *Doctor) base(ctx context.Context, repository Check) Check {
 	if !repository.Passed() {
 		return Check{Name: "base", State: Skipped, Detail: "depende de estar num repositório"}
@@ -137,7 +145,16 @@ func (doctor *Doctor) base(ctx context.Context, repository Check) Check {
 		}
 	}
 
-	return Check{Name: "base", State: Ok, Detail: resolved.Name}
+	if resolved.Source == branch.BaseFromLocal {
+		return Check{
+			Name:   "base",
+			State:  Warning,
+			Detail: resolved.Name + ", adivinhada pelo nome",
+			Hint:   "o remoto não disse qual é a padrão dele, então o gtr chutou entre main e master; traga o origin/HEAD com git fetch origin, ou informe a base com --base <branch>",
+		}
+	}
+
+	return Check{Name: "base", State: Ok, Detail: resolved.Name + ", declarada pelo remoto"}
 }
 
 func (doctor *Doctor) gh(ctx context.Context) Check {

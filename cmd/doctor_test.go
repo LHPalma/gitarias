@@ -83,7 +83,7 @@ func TestDoctorReportsEverythingHealthy(t *testing.T) {
 	want := "  ok  git          2.43.0\n" +
 		"  ok  repositório\n" +
 		"  ok  identidade   Luiz Palma <luiz@exemplo.com>\n" +
-		"  ok  base         main\n" +
+		"  ok  base         main, declarada pelo remoto\n" +
 		"  ok  gh           2.62.0\n"
 
 	if result.stdout != want {
@@ -174,6 +174,34 @@ func TestDoctorFailsOnAGitOlderThanTheMinimum(t *testing.T) {
 	}
 }
 
+func TestDoctorWarnsWhenTheBaseWasGuessedByName(t *testing.T) {
+	responses := healthyRepository()
+	delete(responses, "symbolic-ref --short refs/remotes/origin/HEAD")
+
+	result := diagnosingIn(t, responses, gitFound(), "doctor")
+
+	if result.err != nil {
+		t.Fatalf("chute plausível não derruba o comando, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "aviso") || !strings.Contains(result.stdout, "adivinhada") {
+		t.Errorf("saída = %q, queria o aviso dizendo que a base foi chutada", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "git fetch origin") {
+		t.Errorf("saída = %q, queria o comando que traz o origin/HEAD", result.stdout)
+	}
+}
+
+func TestDoctorStrictFailsOnAGuessedBase(t *testing.T) {
+	responses := healthyRepository()
+	delete(responses, "symbolic-ref --short refs/remotes/origin/HEAD")
+
+	result := diagnosingIn(t, responses, gitFound(), "doctor", "--strict")
+
+	if result.err == nil {
+		t.Fatal("num portão de CI, base chutada é exatamente o que não se quer deixar passar")
+	}
+}
+
 func TestDoctorJSON(t *testing.T) {
 	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor", "--format", "json")
 
@@ -188,7 +216,7 @@ func TestDoctorJSON(t *testing.T) {
 	if document.Checks[0] != (checkRecord{Check: "git", State: "ok", Detail: "2.43.0"}) {
 		t.Errorf("registro = %+v", document.Checks[0])
 	}
-	if document.Checks[3] != (checkRecord{Check: "base", State: "ok", Detail: "main"}) {
+	if document.Checks[3] != (checkRecord{Check: "base", State: "ok", Detail: "main, declarada pelo remoto"}) {
 		t.Errorf("registro da base = %+v", document.Checks[3])
 	}
 }
@@ -221,7 +249,7 @@ func TestDoctorCSV(t *testing.T) {
 		"git,ok,2.43.0,\n" +
 		"repositório,ok,,\n" +
 		"identidade,ok,Luiz Palma <luiz@exemplo.com>,\n" +
-		"base,ok,main,\n" +
+		"base,ok,\"main, declarada pelo remoto\",\n" +
 		"gh,ok,2.62.0,\n"
 
 	if result.stdout != want {
