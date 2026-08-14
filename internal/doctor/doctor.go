@@ -54,7 +54,27 @@ func (doctor *Doctor) git(ctx context.Context) Check {
 		}
 	}
 
-	return Check{Name: "git", State: Ok, Detail: version(result.Output)}
+	reported := version(result.Output)
+
+	running, readable := parseRelease(reported)
+	switch {
+	case !readable:
+		return Check{
+			Name:   "git",
+			State:  Warning,
+			Detail: "versão ilegível",
+			Hint:   "o gtr precisa do git " + minimumGit.String() + " ou mais novo, e daqui não dá para conferir qual está instalado",
+		}
+	case running.before(minimumGit):
+		return Check{
+			Name:   "git",
+			State:  Failure,
+			Detail: reported + ", abaixo da mínima " + minimumGit.String(),
+			Hint:   "o gtr usa git branch --show-current, que só existe a partir do " + minimumGit.String() + "; atualize em " + gitHomepage,
+		}
+	}
+
+	return Check{Name: "git", State: Ok, Detail: reported}
 }
 
 func (doctor *Doctor) repository(ctx context.Context) Check {
@@ -104,21 +124,4 @@ func (doctor *Doctor) gh(ctx context.Context) Check {
 	}
 
 	return Check{Name: "gh", State: Ok, Detail: version(result.Output)}
-}
-
-func version(output string) string {
-	line, _, _ := strings.Cut(strings.TrimSpace(output), "\n")
-
-	fields := strings.Fields(line)
-	for index, field := range fields {
-		if field == "version" && index+1 < len(fields) {
-			return fields[index+1]
-		}
-	}
-
-	if len(fields) == 0 {
-		return ""
-	}
-
-	return fields[len(fields)-1]
 }

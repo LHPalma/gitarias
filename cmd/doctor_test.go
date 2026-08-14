@@ -144,6 +144,25 @@ func TestDoctorFailsWithoutGit(t *testing.T) {
 	}
 }
 
+func TestDoctorFailsOnAGitOlderThanTheMinimum(t *testing.T) {
+	outcomes := []exectest.Response{
+		{Result: exec.Result{Output: "git version 2.20.1"}},
+		{Result: exec.Result{Output: "gh version 2.62.0 (2024-11-14)"}},
+	}
+
+	result := diagnosingIn(t, healthyRepository(), outcomes, "doctor")
+
+	if result.err == nil {
+		t.Fatal("git abaixo da mínima tem de sair com 1: o gtr chama comando que essa versão não tem")
+	}
+	if !strings.Contains(result.stdout, "2.20.1") || !strings.Contains(result.stdout, "2.22") {
+		t.Errorf("saída = %q, queria a versão encontrada e a mínima", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "git-scm.com") {
+		t.Errorf("saída = %q, queria onde atualizar", result.stdout)
+	}
+}
+
 func TestDoctorJSON(t *testing.T) {
 	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor", "--format", "json")
 

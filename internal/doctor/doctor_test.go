@@ -92,16 +92,44 @@ func TestDiagnoseReportsGitThatDoesNotRun(t *testing.T) {
 	}
 }
 
-func TestVersionOfAnEmptyOutput(t *testing.T) {
-	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "   \n"}})
+func TestDiagnoseFailsOnAGitOlderThanTheMinimum(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.20.1"}})
+
+	check := gitCheck(t, New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context()))
+
+	if check.State != Failure {
+		t.Errorf("estado = %v; git velho demais nao roda o que o gtr chama, entao e falha", check.State)
+	}
+	if !strings.Contains(check.Detail, "2.20.1") || !strings.Contains(check.Detail, minimumGit.String()) {
+		t.Errorf("detalhe = %q, queria a versao encontrada e a minima", check.Detail)
+	}
+	if !strings.Contains(check.Hint, "--show-current") {
+		t.Errorf("dica = %q; dizer qual comando falta e mais util que so o numero", check.Hint)
+	}
+}
+
+func TestDiagnoseAcceptsExactlyTheMinimum(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{
+		Result: exec.Result{Output: "git version " + minimumGit.String() + ".0"},
+	})
 
 	check := gitCheck(t, New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context()))
 
 	if !check.Passed() {
-		t.Errorf("checagem = %+v; o git respondeu, entao passou mesmo sem versao legivel", check)
+		t.Errorf("checagem = %+v; a minima e minima, nao exclusiva", check)
 	}
-	if check.Detail != "" {
-		t.Errorf("detalhe = %q, queria vazio", check.Detail)
+}
+
+func TestDiagnoseWarnsWhenTheVersionIsUnreadable(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "   \n"}})
+
+	check := gitCheck(t, New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context()))
+
+	if check.State != Warning {
+		t.Errorf("estado = %v; o git respondeu, mas sem versao nao da para dizer se atende a minima", check.State)
+	}
+	if check.Hint == "" {
+		t.Error("aviso tem de dizer o que se esperava")
 	}
 }
 
@@ -242,27 +270,5 @@ func TestDiagnoseWarnsAboutAGhThatDoesNotRun(t *testing.T) {
 	}
 	if !strings.Contains(check.Hint, "permission denied") {
 		t.Errorf("dica = %q; a saida do proprio gh diz mais que qualquer texto meu", check.Hint)
-	}
-}
-
-func TestVersionOfTheTwoFormats(t *testing.T) {
-	tests := []struct {
-		name   string
-		output string
-		want   string
-	}{
-		{name: "git", output: "git version 2.43.0", want: "2.43.0"},
-		{name: "gh com data e url", output: "gh version 2.62.0 (2024-11-14)\nhttps://github.com/cli/cli", want: "2.62.0"},
-		{name: "sem a palavra version cai no ultimo campo", output: "2.43.0", want: "2.43.0"},
-		{name: "version no fim nao estoura o slice", output: "alguma coisa version", want: "version"},
-		{name: "vazio", output: "  \n ", want: ""},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := version(test.output); got != test.want {
-				t.Errorf("versao = %q, queria %q", got, test.want)
-			}
-		})
 	}
 }

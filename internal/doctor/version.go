@@ -1,0 +1,66 @@
+package doctor
+
+import (
+	"strconv"
+	"strings"
+)
+
+// O comando mais novo que o gtr usa é o branch --show-current, que chegou no
+// git 2.22. Abaixo disso a resolução de base não tem como funcionar.
+var minimumGit = release{major: 2, minor: 22}
+
+type release struct {
+	major int
+	minor int
+}
+
+func (version release) String() string {
+	return strconv.Itoa(version.major) + "." + strconv.Itoa(version.minor)
+}
+
+func (version release) before(other release) bool {
+	if version.major != other.major {
+		return version.major < other.major
+	}
+
+	return version.minor < other.minor
+}
+
+// parseRelease lê só os dois primeiros números, que é o que a mínima compara.
+// O resto varia demais para servir de critério: o git do macOS anexa a build
+// da Apple e o do Windows anexa o sufixo da distribuição.
+func parseRelease(text string) (release, bool) {
+	fields := strings.SplitN(text, ".", 3)
+	if len(fields) < 2 {
+		return release{}, false
+	}
+
+	major, err := strconv.Atoi(fields[0])
+	if err != nil {
+		return release{}, false
+	}
+
+	minor, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return release{}, false
+	}
+
+	return release{major: major, minor: minor}, true
+}
+
+func version(output string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(output), "\n")
+
+	fields := strings.Fields(line)
+	for index, field := range fields {
+		if field == "version" && index+1 < len(fields) {
+			return fields[index+1]
+		}
+	}
+
+	if len(fields) == 0 {
+		return ""
+	}
+
+	return fields[len(fields)-1]
+}
