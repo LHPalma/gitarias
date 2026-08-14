@@ -313,29 +313,56 @@ A saída é 1 se qualquer commit falhar, 0 se todos passarem.
 
 ### `gtr doctor`
 
-Confere se a máquina tem o que o `gtr` precisa.
+Confere se o `gtr` funciona aqui, agora.
 
 ```
 $ gtr doctor
-  ok  git 2.43.0
+  ok  git          2.43.0
+  ok  repositório
+  ok  base         main
 ```
 
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--strict` | `false` | Trata aviso como falha, para quem roda o `doctor` num portão de CI |
+| `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
+| `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
+
+**Quatro estados, e a diferença entre eles é o que o comando tem de útil:**
+
+| Estado | Significa | Afeta a saída? |
+|---|---|---|
+| `ok` | está no lugar | não |
+| `falta` | o `gtr` não funciona sem isso | **sai 1** |
+| `aviso` | quebra um comando, não a ferramenta | só com `--strict` |
+| `--` | não se aplica aqui | nunca |
+
+**É o único comando que roda fora de um repositório git**, e ali as checagens
+que dependem de um não falham — elas se declaram inaplicáveis:
+
 ```
-$ gtr doctor
-  falta  git não encontrado no PATH
-         o gtr orquestra o git da máquina e não funciona sem ele; instale em https://git-scm.com
-erro: 1 checagem(ns) falharam
+$ cd /tmp && gtr doctor
+  ok  git          2.43.0
+  --  repositório  o diretório atual não é um repositório git
+  --  base         depende de estar num repositório
 ```
 
-Sai 1 se alguma checagem falhar. **É o único comando que não precisa de um
-repositório git** — ele diagnostica a máquina, não o repositório, e roda de
-qualquer diretório.
+**Base indeterminável é aviso, não falha.** Ela só é necessária para o
+`gtr branches`, e mesmo lá há saída pelo `--base`:
 
-Aceita `--format`, `--output`, `--separator` e `--no-header` como os demais. No
-`json` o `state` é token — `ok`, `warning`, `failure` —, e no `csv` é o rótulo
-de tela.
+```
+$ gtr doctor        # num repositório sem main, master nem origin/HEAD
+  ok     git          2.43.0
+  ok     repositório
+  aviso  base         não determinável aqui
+                      só o gtr branches precisa dela; informe com --base <branch> ou crie main ou master
+```
 
-Hoje ele checa só o `git`. A lista cresce conforme o `gtr` ganhar dependências.
+Sem `--strict` isso sai 0. Com `--strict`, sai 1 — é a flag para quem quer que
+o portão de CI reclame de tudo que não está redondo.
+
+No `json` o `state` é token — `ok`, `warning`, `failure`, `skipped` —, e no
+`csv` é o rótulo de tela.
 
 ### `gtr ignore list`
 

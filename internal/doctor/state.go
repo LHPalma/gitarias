@@ -6,6 +6,7 @@ const (
 	Ok State = iota
 	Warning
 	Failure
+	Skipped
 )
 
 func (state State) String() string {
@@ -14,6 +15,8 @@ func (state State) String() string {
 		return "warning"
 	case Failure:
 		return "failure"
+	case Skipped:
+		return "skipped"
 	default:
 		return "ok"
 	}

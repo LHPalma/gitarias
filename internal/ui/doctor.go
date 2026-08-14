@@ -8,6 +8,8 @@ func DescribeCheck(check doctor.Check) string {
 		return "aviso"
 	case doctor.Failure:
 		return "falta"
+	case doctor.Skipped:
+		return "--"
 	default:
 		return "ok"
 	}

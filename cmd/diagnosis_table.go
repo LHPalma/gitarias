@@ -3,8 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/LHPalma/gitarias/internal/doctor"
 	"github.com/LHPalma/gitarias/internal/ui"
@@ -42,54 +40,22 @@ func (data diagnosisTable) document() any {
 }
 
 func (data diagnosisTable) text(output io.Writer) error {
-	width := labelWidth(data.checks)
+	writer := columns(&trimmingWriter{output: output})
 
 	for _, check := range data.checks {
-		if err := data.printCheck(output, check, width); err != nil {
-			return err
+		fmt.Fprintf(writer, "  %s\t%s\t%s\n", ui.DescribeCheck(check), check.Name, check.Detail)
+		if check.Hint != "" {
+			fmt.Fprintf(writer, "  \t\t%s\n", check.Hint)
 		}
 	}
 
-	return nil
+	return writer.Flush()
 }
 
-func (data diagnosisTable) printCheck(output io.Writer, check doctor.Check, width int) error {
-	label := ui.DescribeCheck(check)
-	padding := strings.Repeat(" ", width-utf8.RuneCountInString(label))
-
-	line := fmt.Sprintf("  %s%s  %s", label, padding, check.Name)
-	if check.Detail != "" {
-		line += " " + check.Detail
-	}
-
-	if _, err := fmt.Fprintln(output, line); err != nil {
-		return err
-	}
-
-	if check.Hint == "" {
-		return nil
-	}
-
-	_, err := fmt.Fprintf(output, "  %s  %s\n", strings.Repeat(" ", width), check.Hint)
-
-	return err
-}
-
-func labelWidth(checks []doctor.Check) int {
-	width := 0
-	for _, check := range checks {
-		if length := utf8.RuneCountInString(ui.DescribeCheck(check)); length > width {
-			width = length
-		}
-	}
-
-	return width
-}
-
-func (data diagnosisTable) failed() int {
+func (data diagnosisTable) failed(strict bool) int {
 	failed := 0
 	for _, check := range data.checks {
-		if check.State == doctor.Failure {
+		if check.State == doctor.Failure || (strict && check.State == doctor.Warning) {
 			failed++
 		}
 	}

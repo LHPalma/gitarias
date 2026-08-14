@@ -34,3 +34,9 @@ func TestDescribeCheckStaysApartFromTheToken(t *testing.T) {
 		t.Error("o rotulo de tela e o token de maquina sao vocabularios diferentes; o roadmap 9 traduz um e nao o outro")
 	}
 }
+
+func TestDescribeCheckMarksTheSkipped(t *testing.T) {
+	if got := DescribeCheck(doctor.Check{State: doctor.Skipped}); got != "--" {
+		t.Errorf("rotulo = %q; pulado nao e ok nem falha, e nao pode se disfarcar de nenhum dos dois", got)
+	}
+}

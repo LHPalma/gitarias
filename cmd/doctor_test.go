@@ -18,7 +18,13 @@ import (
 func diagnosing(t *testing.T, outcomes []exectest.Response, args ...string) execution {
 	t.Helper()
 
-	runner := gittest.NewRunner(nil)
+	return diagnosingIn(t, nil, outcomes, args...)
+}
+
+func diagnosingIn(t *testing.T, responses map[string]gittest.Response, outcomes []exectest.Response, args ...string) execution {
+	t.Helper()
+
+	runner := gittest.NewRunner(responses)
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
 	command := NewRootCommand(runner, exectest.NewRunner(outcomes...), noNotices)
@@ -35,22 +41,79 @@ func gitFound() []exectest.Response {
 	return []exectest.Response{{Result: exec.Result{Output: "git version 2.43.0"}}}
 }
 
-func TestDoctorReportsAHealthyGit(t *testing.T) {
-	result := diagnosing(t, gitFound(), "doctor")
-
-	if result.err != nil {
-		t.Fatalf("com git na máquina o doctor sai limpo, veio %v", result.err)
-	}
-	if result.stdout != "  ok  git 2.43.0\n" {
-		t.Errorf("saída = %q", result.stdout)
+func healthyRepository() map[string]gittest.Response {
+	return map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree":               {Output: "true"},
+		"symbolic-ref --short refs/remotes/origin/HEAD": {Output: "origin/main"},
+		"rev-parse --verify --quiet refs/heads/main":    {Output: "abc"},
 	}
 }
 
-func TestDoctorNeverTouchesTheRepository(t *testing.T) {
+func TestDoctorReportsEverythingHealthy(t *testing.T) {
+	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor")
+
+	if result.err != nil {
+		t.Fatalf("com tudo no lugar o doctor sai limpo, veio %v", result.err)
+	}
+
+	want := "  ok  git          2.43.0\n" +
+		"  ok  repositório\n" +
+		"  ok  base         main\n"
+
+	if result.stdout != want {
+		t.Errorf("saída:\n%q\nqueria:\n%q", result.stdout, want)
+	}
+}
+
+func TestDoctorRunsOutsideARepository(t *testing.T) {
 	result := diagnosing(t, gitFound(), "doctor")
 
-	if len(result.calls) != 0 {
-		t.Errorf("chamadas = %v; o doctor diagnostica a máquina e tem de rodar fora de um repositório", result.calls)
+	if result.err != nil {
+		t.Fatalf("fora de um repositório não é falha: o gtr está inteiro, só não há o que diagnosticar; veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "não é um repositório git") {
+		t.Errorf("saída = %q, queria dizer por que pulou", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "depende de estar num repositório") {
+		t.Errorf("saída = %q, a base depende do repositório e tem de dizer isso", result.stdout)
+	}
+}
+
+func TestDoctorWarnsWhenTheBaseIsNotDeterminable(t *testing.T) {
+	responses := map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Output: "true"}}
+
+	result := diagnosingIn(t, responses, gitFound(), "doctor")
+
+	if result.err != nil {
+		t.Fatalf("base indeterminável quebra só o branches, então é aviso e não falha; veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "aviso") {
+		t.Errorf("saída = %q, queria o aviso", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "--base") {
+		t.Errorf("saída = %q, queria a saída de emergência", result.stdout)
+	}
+}
+
+func TestDoctorStrictTurnsTheWarningIntoAFailure(t *testing.T) {
+	responses := map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Output: "true"}}
+
+	relaxed := diagnosingIn(t, responses, gitFound(), "doctor")
+	strict := diagnosingIn(t, responses, gitFound(), "doctor", "--strict")
+
+	if relaxed.err != nil {
+		t.Fatalf("sem --strict o aviso não derruba, veio %v", relaxed.err)
+	}
+	if strict.err == nil {
+		t.Fatal("com --strict o aviso vira falha; é para isso que a flag existe")
+	}
+}
+
+func TestDoctorStrictLeavesTheSkippedAlone(t *testing.T) {
+	result := diagnosing(t, gitFound(), "doctor", "--strict")
+
+	if result.err != nil {
+		t.Fatalf("pulado não é aviso: fora de um repositório não há o que reclamar, nem com --strict; veio %v", result.err)
 	}
 }
 
@@ -71,18 +134,29 @@ func TestDoctorFailsWithoutGit(t *testing.T) {
 }
 
 func TestDoctorJSON(t *testing.T) {
-	result := diagnosing(t, gitFound(), "doctor", "--format", "json")
+	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor", "--format", "json")
 
 	var document diagnosisDocument
 	if err := json.Unmarshal([]byte(result.stdout), &document); err != nil {
 		t.Fatalf("a saída tem de ser json válido, veio %q: %v", result.stdout, err)
 	}
 
-	if len(document.Checks) != 1 {
-		t.Fatalf("checagens = %+v, queria a do git", document.Checks)
+	if len(document.Checks) != 3 {
+		t.Fatalf("checagens = %+v, queria as três", document.Checks)
 	}
 	if document.Checks[0] != (checkRecord{Check: "git", State: "ok", Detail: "2.43.0"}) {
 		t.Errorf("registro = %+v", document.Checks[0])
+	}
+	if document.Checks[2] != (checkRecord{Check: "base", State: "ok", Detail: "main"}) {
+		t.Errorf("registro da base = %+v", document.Checks[2])
+	}
+}
+
+func TestDoctorJSONMarksTheSkippedAsSkipped(t *testing.T) {
+	result := diagnosing(t, gitFound(), "doctor", "--format", "json")
+
+	if !strings.Contains(result.stdout, `"state": "skipped"`) {
+		t.Errorf("saída = %q; pulado é estado próprio, não ok nem falha", result.stdout)
 	}
 }
 
@@ -100,9 +174,13 @@ func TestDoctorJSONKeepsTheStateAsAnEnglishToken(t *testing.T) {
 }
 
 func TestDoctorCSV(t *testing.T) {
-	result := diagnosing(t, gitFound(), "doctor", "--format", "csv")
+	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor", "--format", "csv")
 
-	want := "checagem,estado,detalhe,como resolver\ngit,ok,2.43.0,\n"
+	want := "checagem,estado,detalhe,como resolver\n" +
+		"git,ok,2.43.0,\n" +
+		"repositório,ok,,\n" +
+		"base,ok,main,\n"
+
 	if result.stdout != want {
 		t.Errorf("saída = %q, queria %q", result.stdout, want)
 	}
@@ -143,14 +221,35 @@ func TestDoctorRefusesTheFlagsOutsideTheirFormats(t *testing.T) {
 }
 
 func TestDoctorNeverEndsALineWithSpace(t *testing.T) {
-	outcomes := []exectest.Response{{Err: errors.New("not found")}}
+	tests := []struct {
+		name     string
+		outcomes []exectest.Response
+	}{
+		{name: "tudo ok", outcomes: gitFound()},
+		{name: "git ausente", outcomes: []exectest.Response{{Err: errors.New("not found")}}},
+	}
 
-	result := diagnosing(t, outcomes, "doctor")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := diagnosing(t, test.outcomes, "doctor")
 
-	for number, line := range strings.Split(result.stdout, "\n") {
-		if strings.HasSuffix(line, " ") {
-			t.Errorf("RN-10: a linha %d termina em espaço: %q", number+1, line)
-		}
+			if result.stdout == "" {
+				t.Fatal("sem saída o teste passa de graça")
+			}
+			for number, line := range strings.Split(result.stdout, "\n") {
+				if strings.HasSuffix(line, " ") {
+					t.Errorf("RN-10: a linha %d termina em espaço: %q", number+1, line)
+				}
+			}
+		})
+	}
+}
+
+func TestDiagnosisTablePropagatesTheAlignmentFailure(t *testing.T) {
+	data := diagnosisTable{checks: []doctor.Check{{Name: "git"}}}
+
+	if err := data.text(brokenWriter{}); err == nil {
+		t.Fatal("falha ao esvaziar o alinhador tem de virar erro")
 	}
 }
 

@@ -22,7 +22,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, notices string) *cobra.
 
 	command.AddCommand(newBranchesCommand(runner))
 	command.AddCommand(newCommitsCommand(runner, commands))
-	command.AddCommand(newDoctorCommand(commands))
+	command.AddCommand(newDoctorCommand(runner, commands))
 	command.AddCommand(newIgnoreCommand(runner))
 	command.AddCommand(newLicensesCommand(notices))
 	command.AddCommand(newWorktreesCommand(runner))
