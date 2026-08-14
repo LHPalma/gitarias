@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,6 +16,8 @@ func insideRepo() map[string]gittest.Response {
 		"rev-parse --is-inside-work-tree":               {Output: "true"},
 		"symbolic-ref --short refs/remotes/origin/HEAD": {Output: "origin/main"},
 		"rev-parse --verify --quiet refs/heads/main":    {Output: "abc"},
+		"config --get user.name":                        {Output: "Luiz Palma"},
+		"config --get user.email":                       {Output: "luiz@exemplo.com"},
 	}
 }
 
@@ -179,6 +182,88 @@ func TestDiagnoseSkipsWhatDependsOnARepository(t *testing.T) {
 	}
 	if got := checkNamed(t, checks, "base").State; got != Skipped {
 		t.Errorf("estado = %v; sem repositorio nao ha base a resolver", got)
+	}
+}
+
+func TestDiagnoseShowsTheIdentityInForce(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	check := checkNamed(t, New(gittest.NewRunner(insideRepo()), commands).Diagnose(t.Context()), "identidade")
+
+	if !check.Passed() {
+		t.Fatalf("checagem = %+v, queria ok", check)
+	}
+	if check.Detail != "Luiz Palma <luiz@exemplo.com>" {
+		t.Errorf("detalhe = %q; quem le a linha tem de reconhecer na hora se e a identidade errada", check.Detail)
+	}
+}
+
+func TestDiagnoseReadsTheIdentityTheGitResolves(t *testing.T) {
+	runner := gittest.NewRunner(insideRepo())
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	New(runner, commands).Diagnose(t.Context())
+
+	for _, wanted := range []string{"config --get user.name", "config --get user.email"} {
+		if !slices.Contains(runner.Calls, wanted) {
+			t.Errorf("chamadas = %v, queria %q: o config resolve local sobre global sozinho", runner.Calls, wanted)
+		}
+	}
+}
+
+func TestDiagnoseWarnsAboutEachHalfOfTheIdentity(t *testing.T) {
+	tests := []struct {
+		name    string
+		absent  string
+		missing string
+	}{
+		{name: "sem nome", absent: "config --get user.name", missing: "user.name"},
+		{name: "sem email", absent: "config --get user.email", missing: "user.email"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			responses := insideRepo()
+			delete(responses, test.absent)
+			commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+			check := checkNamed(t, New(gittest.NewRunner(responses), commands).Diagnose(t.Context()), "identidade")
+
+			if check.State != Warning {
+				t.Errorf("estado = %v; sem identidade so a sondagem de squash quebra, entao e aviso", check.State)
+			}
+			if !strings.Contains(check.Detail, test.missing) {
+				t.Errorf("detalhe = %q, queria nomear a chave que falta", check.Detail)
+			}
+		})
+	}
+}
+
+func TestDiagnoseNamesBothHalvesWhenBothAreMissing(t *testing.T) {
+	responses := insideRepo()
+	delete(responses, "config --get user.name")
+	delete(responses, "config --get user.email")
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	check := checkNamed(t, New(gittest.NewRunner(responses), commands).Diagnose(t.Context()), "identidade")
+
+	if !strings.Contains(check.Detail, "user.name") || !strings.Contains(check.Detail, "user.email") {
+		t.Errorf("detalhe = %q; consertar uma e descobrir a outra depois e uma viagem a mais", check.Detail)
+	}
+	if check.Hint == "" {
+		t.Error("aviso tem de dizer como resolver")
+	}
+}
+
+func TestDiagnoseTreatsAnEmptyIdentityAsAbsent(t *testing.T) {
+	responses := insideRepo()
+	responses["config --get user.email"] = gittest.Response{Output: ""}
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
+
+	check := checkNamed(t, New(gittest.NewRunner(responses), commands).Diagnose(t.Context()), "identidade")
+
+	if check.State != Warning {
+		t.Errorf("estado = %v; user.email setado como vazio sai com codigo zero e nao vale como identidade", check.State)
 	}
 }
 

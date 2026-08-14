@@ -29,6 +29,7 @@ func (doctor *Doctor) Diagnose(ctx context.Context) []Check {
 	return []Check{
 		doctor.git(ctx),
 		repository,
+		doctor.identity(ctx),
 		doctor.base(ctx, repository),
 		doctor.gh(ctx),
 	}
@@ -83,6 +84,42 @@ func (doctor *Doctor) repository(ctx context.Context) Check {
 	}
 
 	return Check{Name: "repositório", State: Ok}
+}
+
+// identity relata a identidade de git em vigor em vez de julgá-la. Só o git
+// resolve a precedência entre o config local e o global, e o gtr não tem como
+// saber qual das duas o autor queria; quem lê a linha reconhece na hora.
+func (doctor *Doctor) identity(ctx context.Context) Check {
+	name := doctor.setting(ctx, "user.name")
+	email := doctor.setting(ctx, "user.email")
+
+	var missing []string
+	if name == "" {
+		missing = append(missing, "user.name")
+	}
+	if email == "" {
+		missing = append(missing, "user.email")
+	}
+
+	if len(missing) > 0 {
+		return Check{
+			Name:   "identidade",
+			State:  Warning,
+			Detail: "falta " + strings.Join(missing, " e "),
+			Hint:   "o gtr branches monta um commit de sondagem para achar branch squashada, e o git recusa montá-lo sem autor; configure com git config user.name e git config user.email",
+		}
+	}
+
+	return Check{Name: "identidade", State: Ok, Detail: name + " <" + email + ">"}
+}
+
+func (doctor *Doctor) setting(ctx context.Context, key string) string {
+	value, err := doctor.runner.Run(ctx, "config", "--get", key)
+	if err != nil {
+		return ""
+	}
+
+	return value
 }
 
 func (doctor *Doctor) base(ctx context.Context, repository Check) Check {

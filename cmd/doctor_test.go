@@ -51,12 +51,26 @@ func withoutGh() []exectest.Response {
 	}
 }
 
-func healthyRepository() map[string]gittest.Response {
+func identified() map[string]gittest.Response {
 	return map[string]gittest.Response{
-		"rev-parse --is-inside-work-tree":               {Output: "true"},
-		"symbolic-ref --short refs/remotes/origin/HEAD": {Output: "origin/main"},
-		"rev-parse --verify --quiet refs/heads/main":    {Output: "abc"},
+		"config --get user.name":  {Output: "Luiz Palma"},
+		"config --get user.email": {Output: "luiz@exemplo.com"},
 	}
+}
+
+func repositoryWithoutBase() map[string]gittest.Response {
+	responses := identified()
+	responses["rev-parse --is-inside-work-tree"] = gittest.Response{Output: "true"}
+
+	return responses
+}
+
+func healthyRepository() map[string]gittest.Response {
+	responses := repositoryWithoutBase()
+	responses["symbolic-ref --short refs/remotes/origin/HEAD"] = gittest.Response{Output: "origin/main"}
+	responses["rev-parse --verify --quiet refs/heads/main"] = gittest.Response{Output: "abc"}
+
+	return responses
 }
 
 func TestDoctorReportsEverythingHealthy(t *testing.T) {
@@ -68,6 +82,7 @@ func TestDoctorReportsEverythingHealthy(t *testing.T) {
 
 	want := "  ok  git          2.43.0\n" +
 		"  ok  repositório\n" +
+		"  ok  identidade   Luiz Palma <luiz@exemplo.com>\n" +
 		"  ok  base         main\n" +
 		"  ok  gh           2.62.0\n"
 
@@ -91,9 +106,7 @@ func TestDoctorRunsOutsideARepository(t *testing.T) {
 }
 
 func TestDoctorWarnsWhenTheBaseIsNotDeterminable(t *testing.T) {
-	responses := map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Output: "true"}}
-
-	result := diagnosingIn(t, responses, gitFound(), "doctor")
+	result := diagnosingIn(t, repositoryWithoutBase(), gitFound(), "doctor")
 
 	if result.err != nil {
 		t.Fatalf("base indeterminável quebra só o branches, então é aviso e não falha; veio %v", result.err)
@@ -107,10 +120,8 @@ func TestDoctorWarnsWhenTheBaseIsNotDeterminable(t *testing.T) {
 }
 
 func TestDoctorStrictTurnsTheWarningIntoAFailure(t *testing.T) {
-	responses := map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Output: "true"}}
-
-	relaxed := diagnosingIn(t, responses, gitFound(), "doctor")
-	strict := diagnosingIn(t, responses, gitFound(), "doctor", "--strict")
+	relaxed := diagnosingIn(t, repositoryWithoutBase(), gitFound(), "doctor")
+	strict := diagnosingIn(t, repositoryWithoutBase(), gitFound(), "doctor", "--strict")
 
 	if relaxed.err != nil {
 		t.Fatalf("sem --strict o aviso não derruba, veio %v", relaxed.err)
@@ -121,7 +132,7 @@ func TestDoctorStrictTurnsTheWarningIntoAFailure(t *testing.T) {
 }
 
 func TestDoctorStrictLeavesTheSkippedAlone(t *testing.T) {
-	result := diagnosing(t, gitFound(), "doctor", "--strict")
+	result := diagnosingIn(t, identified(), gitFound(), "doctor", "--strict")
 
 	if result.err != nil {
 		t.Fatalf("pulado não é aviso: fora de um repositório não há o que reclamar, nem com --strict; veio %v", result.err)
@@ -171,14 +182,14 @@ func TestDoctorJSON(t *testing.T) {
 		t.Fatalf("a saída tem de ser json válido, veio %q: %v", result.stdout, err)
 	}
 
-	if len(document.Checks) != 4 {
-		t.Fatalf("checagens = %+v, queria as quatro", document.Checks)
+	if len(document.Checks) != 5 {
+		t.Fatalf("checagens = %+v, queria as cinco", document.Checks)
 	}
 	if document.Checks[0] != (checkRecord{Check: "git", State: "ok", Detail: "2.43.0"}) {
 		t.Errorf("registro = %+v", document.Checks[0])
 	}
-	if document.Checks[2] != (checkRecord{Check: "base", State: "ok", Detail: "main"}) {
-		t.Errorf("registro da base = %+v", document.Checks[2])
+	if document.Checks[3] != (checkRecord{Check: "base", State: "ok", Detail: "main"}) {
+		t.Errorf("registro da base = %+v", document.Checks[3])
 	}
 }
 
@@ -209,6 +220,7 @@ func TestDoctorCSV(t *testing.T) {
 	want := "checagem,estado,detalhe,como resolver\n" +
 		"git,ok,2.43.0,\n" +
 		"repositório,ok,,\n" +
+		"identidade,ok,Luiz Palma <luiz@exemplo.com>,\n" +
 		"base,ok,main,\n" +
 		"gh,ok,2.62.0,\n"
 
