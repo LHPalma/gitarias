@@ -5,10 +5,13 @@ import (
 	"strings"
 )
 
-// O comando mais novo que o gtr usa é o branch --show-current, que chegou no
-// git 2.22. Abaixo disso a resolução de base não tem como funcionar.
+// minimumGit é a versão mais antiga do git que o gtr aceita. O critério é o
+// branch --show-current, comando mais novo entre os que o gtr chama e do qual
+// a resolução de base depende, disponível a partir do git 2.22.
 var minimumGit = release{major: 2, minor: 22}
 
+// release é uma versão de git reduzida ao que serve de critério: o número
+// maior e o menor.
 type release struct {
 	major int
 	minor int
@@ -26,9 +29,10 @@ func (version release) before(other release) bool {
 	return version.minor < other.minor
 }
 
-// parseRelease lê só os dois primeiros números, que é o que a mínima compara.
-// O resto varia demais para servir de critério: o git do macOS anexa a build
-// da Apple e o do Windows anexa o sufixo da distribuição.
+// parseRelease extrai o número maior e o menor de uma versão e informa se
+// conseguiu. Só esses dois entram na comparação com a mínima, porque o resto
+// varia demais para servir de critério: o git do macOS anexa a build da Apple
+// e o do Windows anexa o sufixo da distribuição.
 func parseRelease(text string) (release, bool) {
 	fields := strings.SplitN(text, ".", 3)
 	if len(fields) < 2 {
@@ -48,6 +52,9 @@ func parseRelease(text string) (release, bool) {
 	return release{major: major, minor: minor}, true
 }
 
+// version extrai a versão de uma saída de --version, no formato do git e no do
+// gh. Procura o campo seguinte à palavra "version" e, não a encontrando, cai no
+// último campo da primeira linha.
 func version(output string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(output), "\n")
 
