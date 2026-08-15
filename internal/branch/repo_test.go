@@ -518,8 +518,14 @@ func TestDelete(t *testing.T) {
 			t.Errorf("resultado %d é de %q, queria %q", index, results[index].Branch.Name, wanted)
 		}
 	}
-	if len(runner.Calls) != 3 {
-		t.Errorf("esperava 3 chamadas ao git, veio %d: %v", len(runner.Calls), runner.Calls)
+	deletions := 0
+	for _, call := range runner.Calls {
+		if strings.HasPrefix(call, "branch -") {
+			deletions++
+		}
+	}
+	if deletions != 3 {
+		t.Errorf("esperava 3 delecoes, veio %d: %v", deletions, runner.Calls)
 	}
 }
 
@@ -569,13 +575,20 @@ func TestDeleteForcesOnlyEquivalentBranches(t *testing.T) {
 		{Name: "rebaseada", Merge: MergedByRebase},
 	}, true)
 
+	var deletions []string
+	for _, call := range runner.Calls {
+		if strings.HasPrefix(call, "branch -") {
+			deletions = append(deletions, call)
+		}
+	}
+
 	wanted := []string{"branch -d comum", "branch -D squashada", "branch -D rebaseada"}
-	if len(runner.Calls) != len(wanted) {
-		t.Fatalf("chamadas = %v, queria %v", runner.Calls, wanted)
+	if len(deletions) != len(wanted) {
+		t.Fatalf("delecoes = %v, queria %v", deletions, wanted)
 	}
 	for index, call := range wanted {
-		if runner.Calls[index] != call {
-			t.Errorf("chamada %d = %q, queria %q", index, runner.Calls[index], call)
+		if deletions[index] != call {
+			t.Errorf("delecao %d = %q, queria %q", index, deletions[index], call)
 		}
 	}
 }

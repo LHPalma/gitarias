@@ -25,6 +25,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, notices string) *cobra.
 	command.AddCommand(newDoctorCommand(runner, commands))
 	command.AddCommand(newIgnoreCommand(runner))
 	command.AddCommand(newLicensesCommand(notices))
+	command.AddCommand(newUndoCommand(runner))
 	command.AddCommand(newWorktreesCommand(runner))
 
 	return command

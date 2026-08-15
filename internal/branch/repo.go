@@ -206,11 +206,40 @@ func (repo *Repo) Delete(ctx context.Context, branches []Branch, forceEquivalent
 		if forceEquivalent && target.Merge != MergedByAncestry {
 			flag = "-D"
 		}
+
+		tip, _ := repo.runner.Run(ctx, "rev-parse", "--verify", "--quiet", "refs/heads/"+target.Name)
+
 		_, err := repo.runner.Run(ctx, "branch", flag, target.Name)
-		results = append(results, DeleteResult{Branch: target, Err: err})
+		results = append(results, DeleteResult{Branch: target, SHA: tip, Err: err})
 	}
 
 	return results
+}
+
+// Restore recria as branches nas pontas informadas. Recusa a que já existe,
+// para não sobrescrever trabalho, e a cuja ponta o git já não tem — o objeto
+// sobrevive à deleção enquanto o reflog o segura, mas não para sempre.
+func (repo *Repo) Restore(ctx context.Context, branches []Restoration) []RestoreResult {
+	results := make([]RestoreResult, 0, len(branches))
+
+	for _, target := range branches {
+		results = append(results, RestoreResult{Restoration: target, Err: repo.restore(ctx, target)})
+	}
+
+	return results
+}
+
+func (repo *Repo) restore(ctx context.Context, target Restoration) error {
+	if repo.localExists(ctx, target.Name) {
+		return ErrAlreadyExists
+	}
+	if _, err := repo.runner.Run(ctx, "cat-file", "-e", target.SHA+"^{commit}"); err != nil {
+		return ErrGone
+	}
+
+	_, err := repo.runner.Run(ctx, "branch", target.Name, target.SHA)
+
+	return err
 }
 
 func (repo *Repo) Tree(ctx context.Context, base Base) ([]Layer, error) {

@@ -3,10 +3,13 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/LHPalma/gitarias/internal/branch"
+	"github.com/LHPalma/gitarias/internal/git/gittest"
 )
 
 func TestConfirm(t *testing.T) {
@@ -197,6 +200,49 @@ func TestPrintMergedPropagatesWriteError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "disco cheio") {
 		t.Errorf("esperava o erro da escrita, veio %v", err)
+	}
+}
+
+func TestBranchesRecordsWhatItDeletedForTheUndo(t *testing.T) {
+	common := t.TempDir()
+	responses := repository("main", "main\numa\noutra", "main\numa\noutra", "main")
+	responses["rev-parse --git-common-dir"] = gittest.Response{Output: common}
+	responses["rev-parse --verify --quiet refs/heads/uma"] = gittest.Response{Output: "aaa111"}
+	responses["rev-parse --verify --quiet refs/heads/outra"] = gittest.Response{Err: errors.New("fatal")}
+	responses["branch -d uma"] = gittest.Response{Output: ""}
+	responses["branch -d outra"] = gittest.Response{Output: ""}
+
+	if err := execute(t, responses, "y\n", "branches", "--clean").err; err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(common, "gtr", "deleted"))
+	if err != nil {
+		t.Fatalf("o diário tinha de existir: %v", err)
+	}
+	if !strings.Contains(string(content), "aaa111\tuma") {
+		t.Errorf("diário = %q, queria a ponta e o nome da que saiu", content)
+	}
+	if strings.Contains(string(content), "outra") {
+		t.Errorf("diário = %q; sem a ponta não há o que recriar, e registrar mesmo assim daria um undo que mente", content)
+	}
+}
+
+func TestBranchesWarnsWhenItCannotRecordTheDeletion(t *testing.T) {
+	responses := repository("main", "main\numa", "main\numa", "main")
+	responses["branch -d uma"] = gittest.Response{Output: ""}
+	responses["rev-parse --verify --quiet refs/heads/uma"] = gittest.Response{Output: "aaa111"}
+
+	result := execute(t, responses, "y\n", "branches", "--clean")
+
+	if result.err != nil {
+		t.Fatalf("não conseguir registrar não desfaz a deleção nem derruba o comando, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "uma deletada") {
+		t.Errorf("saída = %q, a deleção aconteceu e tem de ser relatada", result.stdout)
+	}
+	if !strings.Contains(result.stderr, "gtr undo") {
+		t.Errorf("stderr = %q; quem perdeu a rede de segurança precisa saber", result.stderr)
 	}
 }
 

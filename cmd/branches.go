@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/LHPalma/gitarias/internal/branch"
 	"github.com/LHPalma/gitarias/internal/format"
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/ui"
+	"github.com/LHPalma/gitarias/internal/undo"
 	"github.com/LHPalma/gitarias/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -32,7 +34,7 @@ func newBranchesCommand(runner git.Runner) *cobra.Command {
 		Short: "Lista branches locais já mergeadas na branch base",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, args []string) error {
-			return runBranches(command, branch.NewRepo(runner), worktree.NewRepo(runner), options)
+			return runBranches(command, branch.NewRepo(runner), worktree.NewRepo(runner), undo.NewJournal(runner), options)
 		},
 	}
 
@@ -45,7 +47,7 @@ func newBranchesCommand(runner git.Runner) *cobra.Command {
 	return command
 }
 
-func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.Repo, options branchesOptions) error {
+func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.Repo, journal *undo.Journal, options branchesOptions) error {
 	chosen, err := options.resolve(command)
 	if err != nil {
 		return err
@@ -124,7 +126,13 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 		return nil
 	}
 
-	return report(output, errorOutput, repo.Delete(ctx, candidates, options.force))
+	results := repo.Delete(ctx, candidates, options.force)
+
+	if err := journal.Record(ctx, deletions(results)); err != nil {
+		fmt.Fprintln(errorOutput, "aviso: não consegui registrar o que foi deletado, então o gtr undo não vai enxergar estas branches:", err)
+	}
+
+	return report(output, errorOutput, results)
 }
 
 func runBranchesTree(ctx context.Context, command *cobra.Command, repo *branch.Repo, chosen rendering, options branchesOptions, base branch.Base) error {
@@ -266,4 +274,20 @@ func report(output io.Writer, errorOutput io.Writer, results []branch.DeleteResu
 		return fmt.Errorf("%d %s", failed, ui.Plural(failed, "branch não pôde ser deletada", "branches não puderam ser deletadas"))
 	}
 	return nil
+}
+
+// deletions traduz o que foi de fato deletado em entradas de diário. A que
+// falhou não entra: recriar o que nunca saiu daria um undo que mente.
+func deletions(results []branch.DeleteResult) []undo.Entry {
+	now := time.Now()
+
+	entries := make([]undo.Entry, 0, len(results))
+	for _, result := range results {
+		if result.Err != nil || result.SHA == "" {
+			continue
+		}
+		entries = append(entries, undo.Entry{Deleted: now, SHA: result.SHA, Name: result.Branch.Name})
+	}
+
+	return entries
 }
