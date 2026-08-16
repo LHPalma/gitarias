@@ -8,6 +8,8 @@ import (
 
 	"github.com/LHPalma/gitarias/internal/exec/exectest"
 	"github.com/LHPalma/gitarias/internal/git/gittest"
+	"github.com/LHPalma/gitarias/internal/platform"
+	"github.com/LHPalma/gitarias/internal/platform/platformtest"
 )
 
 var errNotARepository = errors.New("fatal: not a git repository")
@@ -35,7 +37,7 @@ func execute(t *testing.T, responses map[string]gittest.Response, answer string,
 	runner := gittest.NewRunner(responses)
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
-	command := NewRootCommand(runner, noCommands(), noNotices)
+	command := NewRootCommand(runner, noCommands(), noFinder(), noNotices)
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.SetIn(strings.NewReader(answer))
@@ -273,7 +275,7 @@ func TestBranchesCommandPropagatesListingFailure(t *testing.T) {
 }
 
 func TestBranchesCommandPropagatesWriteFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")), noCommands(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")), noCommands(), noFinder(), noNotices)
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"branches"})
@@ -284,7 +286,7 @@ func TestBranchesCommandPropagatesWriteFailure(t *testing.T) {
 }
 
 func TestBranchesCommandPropagatesReadFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")), noCommands(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")), noCommands(), noFinder(), noNotices)
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetIn(brokenReader{})
@@ -497,7 +499,7 @@ func run(t *testing.T, responses map[string]gittest.Response, args ...string) (i
 
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
-	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noFinder(), noNotices)
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.SetArgs(args)
@@ -535,7 +537,7 @@ func TestRunReturnsOneAndReportsWhenTheCommandFails(t *testing.T) {
 }
 
 func TestBranchesCommandPropagatesHeldSectionWriteFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(onlyHeldRepository()), noCommands(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(onlyHeldRepository()), noCommands(), noFinder(), noNotices)
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"branches"})
@@ -543,4 +545,10 @@ func TestBranchesCommandPropagatesHeldSectionWriteFailure(t *testing.T) {
 	if command.Execute() == nil {
 		t.Fatal("falha de escrita na seção das presas tem de virar erro")
 	}
+}
+
+// noFinder descreve uma máquina sem gerenciador de pacotes, que é o padrão
+// para todo teste que não é do setup.
+func noFinder() platform.Finder {
+	return platformtest.Finder{System: "linux"}
 }

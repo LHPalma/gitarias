@@ -92,7 +92,7 @@ func checking(t *testing.T, responses map[string]gittest.Response, outcomes []ex
 	commands := exectest.NewRunner(outcomes...)
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
-	command := NewRootCommand(runner, commands, noNotices)
+	command := NewRootCommand(runner, commands, noFinder(), noNotices)
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.SetIn(strings.NewReader(""))
@@ -236,7 +236,7 @@ func TestCommitsCheckPassesTheArgumentWithSpaceWhole(t *testing.T) {
 	runner := &extractingRunner{Runner: gittest.NewRunner(history("main", "aaa\x00um")), t: t}
 	commands := exectest.NewRunner(exectest.Response{})
 
-	command := NewRootCommand(runner, commands, noNotices)
+	command := NewRootCommand(runner, commands, noFinder(), noNotices)
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"commits", "check", "main", "--", "go", "test", "-run", "Test A"})
@@ -276,7 +276,7 @@ func TestCommitsCheckPropagatesTheExtractionFailure(t *testing.T) {
 	runner := gittest.NewRunner(history("main", "aaa\x00um"))
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
-	command := NewRootCommand(runner, exectest.NewRunner(exectest.Response{}), noNotices)
+	command := NewRootCommand(runner, exectest.NewRunner(exectest.Response{}), noFinder(), noNotices)
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.SetArgs([]string{"commits", "check", "main", "--", "go", "test"})

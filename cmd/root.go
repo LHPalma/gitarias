@@ -8,10 +8,11 @@ import (
 	"syscall"
 
 	"github.com/LHPalma/gitarias/internal/exec"
+	"github.com/LHPalma/gitarias/internal/platform"
 	"github.com/spf13/cobra"
 )
 
-func NewRootCommand(runner Runner, commands exec.Runner, notices string) *cobra.Command {
+func NewRootCommand(runner Runner, commands exec.Runner, finder platform.Finder, notices string) *cobra.Command {
 	command := &cobra.Command{
 		Use:           "gtr",
 		Short:         "Utilitários de git pro dia a dia",
@@ -25,6 +26,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, notices string) *cobra.
 	command.AddCommand(newDoctorCommand(runner, commands))
 	command.AddCommand(newIgnoreCommand(runner))
 	command.AddCommand(newLicensesCommand(notices))
+	command.AddCommand(newSetupCommand(runner, commands, finder))
 	command.AddCommand(newUndoCommand(runner))
 	command.AddCommand(newWeightCommand(runner))
 	command.AddCommand(newWorktreesCommand(runner))
