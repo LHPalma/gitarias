@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -17,6 +18,13 @@ func (CommandRunner) Run(ctx context.Context, args ...string) (string, error) {
 func (CommandRunner) RunWithInput(ctx context.Context, input string, args ...string) (string, error) {
 	command := exec.CommandContext(ctx, "git", args...)
 	command.Stdin = strings.NewReader(input)
+
+	return run(ctx, command)
+}
+
+func (CommandRunner) RunWithEnv(ctx context.Context, env []string, args ...string) (string, error) {
+	command := exec.CommandContext(ctx, "git", args...)
+	command.Env = append(os.Environ(), env...)
 
 	return run(ctx, command)
 }

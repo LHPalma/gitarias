@@ -9,4 +9,5 @@ import (
 type Runner interface {
 	git.Runner
 	RunWithInput(ctx context.Context, input string, args ...string) (string, error)
+	RunWithEnv(ctx context.Context, env []string, args ...string) (string, error)
 }

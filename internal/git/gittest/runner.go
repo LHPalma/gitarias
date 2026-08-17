@@ -10,10 +10,11 @@ type Runner struct {
 	Responses map[string]Response
 	Calls     []string
 	Inputs    map[string]string
+	Envs      map[string][]string
 }
 
 func NewRunner(responses map[string]Response) *Runner {
-	return &Runner{Responses: responses, Inputs: map[string]string{}}
+	return &Runner{Responses: responses, Inputs: map[string]string{}, Envs: map[string][]string{}}
 }
 
 func (runner *Runner) Run(ctx context.Context, args ...string) (string, error) {
@@ -34,6 +35,12 @@ func (runner *Runner) Run(ctx context.Context, args ...string) (string, error) {
 
 func (runner *Runner) RunWithInput(ctx context.Context, input string, args ...string) (string, error) {
 	runner.Inputs[strings.Join(args, " ")] = input
+
+	return runner.Run(ctx, args...)
+}
+
+func (runner *Runner) RunWithEnv(ctx context.Context, env []string, args ...string) (string, error) {
+	runner.Envs[strings.Join(args, " ")] = env
 
 	return runner.Run(ctx, args...)
 }
