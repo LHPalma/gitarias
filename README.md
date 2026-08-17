@@ -466,6 +466,40 @@ sai legível (`2.9 MB`); no `csv` e no `json`, cru (`3000000`).
 **Diagnostica e não conserta.** Expurgar um blob é reescrever o histórico —
 todo SHA dali para frente muda, e todo clone e PR existente quebra.
 
+### `gtr stats`
+
+Quantos commits cada autor tem no histórico do `HEAD` atual.
+
+```
+$ gtr stats
+Autores (2):
+  AUTOR                            COMMITS
+  anteninha <anteninha@teste.com>  3
+  NataLia <natalia@teste.com>      1
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--author <padrão>` | vazio | Filtra por nome ou e-mail, casando substring; repetível, soma quem casar com qualquer um |
+| `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
+| `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
+| `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
+| `--no-header` | `false` | Só com `csv` ou `tsv`. Omite a linha de nomes das colunas |
+
+`--author` é a mesma flag do `git log`, passada direto para o git — casa por
+substring, e é repetível: várias ocorrências **somam** quem casar com
+qualquer uma delas, não exigem casar com todas.
+
+```
+$ gtr stats --author NataLia
+Autores (1):
+  AUTOR                        COMMITS
+  NataLia <natalia@teste.com>  1
+```
+
+É leitura local, sem rede — só `git log`. Repositório sem nenhum commit ainda
+não é erro: `Nenhum commit encontrado.`
+
 ### `gtr setup`
 
 Diz o que falta e qual comando resolve **na sua máquina**. Apelido:
@@ -685,9 +719,9 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 ## Estado
 
 No ar: `branches` (com `--tree`), `worktrees`, `commits check`, `ignore list`,
-`licenses`, `doctor`, `undo`, `weight`, `setup` e `pr list`. Todos aceitam
-`--format`, menos o `licenses`, que imprime texto de licença, e o `undo`, que é
-interativo.
+`licenses`, `doctor`, `undo`, `weight`, `setup`, `pr list` e `stats`. Todos
+aceitam `--format`, menos o `licenses`, que imprime texto de licença, e o
+`undo`, que é interativo.
 
 Planejados: seleção interativa de quais branches apagar, `gtr split` para
 quebrar a árvore suja em vários commits, `gtr ignore add`, `stats`, `changelog`
