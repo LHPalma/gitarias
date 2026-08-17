@@ -533,6 +533,7 @@ Diretório ignorado conta como uma linha só. Use --expand para listar arquivo a
 | Flag | Padrão | Efeito |
 |---|---|---|
 | `--expand` | `false` | Lista arquivo a arquivo em vez de colapsar o diretório |
+| `--expand-dir <caminho>` | vazio | Expande só o(s) diretório(s) informado(s); repetível, incompatível com `--expand` |
 | `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
 | `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
 | `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
@@ -547,7 +548,26 @@ resposta.
 
 **Diretório inteiramente ignorado sai como uma linha.** Sem isso, um
 repositório com `node_modules` cospe centenas de milhares de linhas. O
-`--expand` abre.
+`--expand` abre todos de uma vez; para abrir só um, sem engolir os outros:
+
+```
+$ gtr ignore list --expand-dir node_modules/
+Ignorados (5):
+  CAMINHO                ORIGEM               PADRÃO
+  app.log                .gitignore:2         *.log
+  local-only/            .git/info/exclude:1  local-only/
+  node_modules/react.js  .gitignore:1         node_modules/
+  node_modules/vue.js    .gitignore:1         node_modules/
+  relatório 2026.csv     .gitignore:4         relat*.csv
+
+Diretório ignorado conta como uma linha só. Use --expand para listar arquivo a arquivo.
+```
+
+A flag é repetível (`--expand-dir a/ --expand-dir b/`) e só aceita o caminho
+**exatamente como o `gtr ignore list` colapsou**; pedir um diretório que não
+está colapsado é erro, nomeando os que estão. Com o script de completion do
+Cobra carregado no shell (`source <(gtr completion bash)` ou equivalente), o
+tab sugere só esses diretórios.
 
 **Arquivo já rastreado não aparece**, mesmo casando com uma regra — o git
 continua rastreando quem já estava dentro. É a confusão número um do
