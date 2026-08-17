@@ -22,6 +22,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, finder platform.Finder,
 	}
 
 	command.AddCommand(newBranchesCommand(runner))
+	command.AddCommand(newChurnCommand(runner))
 	command.AddCommand(newCommitsCommand(runner, commands))
 	command.AddCommand(newDoctorCommand(runner, commands))
 	command.AddCommand(newFavoriteBandCommand())
