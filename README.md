@@ -457,6 +457,7 @@ Pronto.
 | `--email <e-mail>` | vazio | O e-mail a atribuir (obrigatório) |
 | `--base <ref>` | vazio | Reescreve `<ref>..HEAD` em vez de só o commit mais recente; `<ref>` fica de fora |
 | `--until <ref>` | vazio | Com `--base`, fecha o intervalo antes do `HEAD`; o que vem depois de `<ref>` é preservado |
+| `--commit <sha>` | vazio | Reescreve só esse commit, preservando tudo antes e depois; incompatível com `--base` e `--until` |
 
 **É uma reescrita de história de verdade.** Sem `--base`, é um
 `commit --amend --reset-author` mais direto — só o SHA do topo muda. Com
@@ -484,6 +485,25 @@ destacado nele; a segunda reencaixa em cima (`rebase --onto`) o que ficou
 para trás, sem tocar no conteúdo. Testado também a partir de `HEAD` já
 destacado (sem branch) e com `--until` igual ao próprio `HEAD`, onde o
 reencaixe não tem nada para mover.
+
+**`--commit <sha>` reescreve um commit só, em qualquer lugar do histórico**,
+preservando tudo antes e tudo depois — o "cherry-pick de autoria" que o nome
+sugere. É açúcar sobre o mesmo mecanismo: por baixo, equivale a
+`--base <sha>^ --until <sha>`, mas sem expor a sintaxe de `^` do git na
+prévia:
+
+```
+$ gtr author --name "Fake Name" --email fake@fake.com --commit f74b936
+Vai reescrever o commit f74b936 (hoje em Real Person <real@real.com>) para Fake Name <fake@fake.com>.
+Mais 2 commits depois de f74b936 serão preservados, só reencaixados em cima.
+Recuperável com: git reset --hard 3ba78c2
+Confirma? [y/N] y
+Pronto.
+```
+
+**Não funciona no commit raiz** — ele não tem pai, e `<raiz>^` não resolve.
+O erro que sai é o do próprio git, cru, sem tradução: é a única borda que
+`--commit` deixa em aberto.
 
 **A prévia sempre lista quem são os autores atuais do intervalo**, antes de
 perguntar. `--base`/`--until` cortam por alcançabilidade, não por autoria —

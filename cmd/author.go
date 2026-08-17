@@ -10,10 +10,11 @@ import (
 )
 
 type authorOptions struct {
-	name  string
-	email string
-	base  string
-	until string
+	name   string
+	email  string
+	base   string
+	until  string
+	commit string
 }
 
 func newAuthorCommand(runner Runner) *cobra.Command {
@@ -35,6 +36,8 @@ func newAuthorCommand(runner Runner) *cobra.Command {
 		"reescreve <base>..HEAD em vez de só o commit mais recente; <base> fica de fora, reescreve a cadeia de SHAs dali pra frente")
 	command.Flags().StringVar(&options.until, "until", "",
 		"com --base, fecha o intervalo antes do HEAD; o que vem depois de <until> é preservado, só reencaixado em cima")
+	command.Flags().StringVar(&options.commit, "commit", "",
+		"reescreve só esse commit, preservando tudo antes e depois; incompatível com --base e --until. Não funciona no commit raiz, que não tem pai")
 
 	return command
 }
@@ -43,8 +46,17 @@ func runAuthor(command *cobra.Command, repo *author.Repo, options authorOptions)
 	if options.name == "" || options.email == "" {
 		return fmt.Errorf("--name e --email são obrigatórios")
 	}
+	if options.commit != "" && (options.base != "" || options.until != "") {
+		return fmt.Errorf("--commit não se combina com --base nem --until")
+	}
 	if options.until != "" && options.base == "" {
 		return fmt.Errorf("--until só faz sentido com --base")
+	}
+
+	base, until := options.base, options.until
+	if options.commit != "" {
+		base = options.commit + "^"
+		until = options.commit
 	}
 
 	ctx := command.Context()
@@ -53,29 +65,37 @@ func runAuthor(command *cobra.Command, repo *author.Repo, options authorOptions)
 		return err
 	}
 
-	plan, err := repo.Plan(ctx, options.base, options.until)
+	plan, err := repo.Plan(ctx, base, until)
 	if err != nil {
 		return err
 	}
 
 	output := command.OutOrStdout()
 
-	if options.base == "" {
+	switch {
+	case base == "":
 		fmt.Fprintf(output, "Vai reescrever o commit mais recente, hoje em nome de %s, para %s <%s>.\n",
 			plan.Author, options.name, options.email)
-	} else {
-		until := options.until
-		if until == "" {
-			until = "HEAD"
+	case options.commit != "":
+		fmt.Fprintf(output, "Vai reescrever o commit %s (hoje em %s) para %s <%s>.\n",
+			options.commit, strings.Join(plan.Authors, ", "), options.name, options.email)
+		if plan.Tail > 0 {
+			fmt.Fprintf(output, "Mais %d %s depois de %s serão preservados, só reencaixados em cima.\n",
+				plan.Tail, ui.Plural(plan.Tail, "commit", "commits"), options.commit)
+		}
+	default:
+		resolvedUntil := until
+		if resolvedUntil == "" {
+			resolvedUntil = "HEAD"
 		}
 
 		fmt.Fprintf(output, "Vai reescrever %d %s (%s..%s) para %s <%s>.\n",
-			plan.Count, ui.Plural(plan.Count, "commit", "commits"), options.base, until, options.name, options.email)
+			plan.Count, ui.Plural(plan.Count, "commit", "commits"), base, resolvedUntil, options.name, options.email)
 		fmt.Fprintf(output, "Autores atuais no intervalo: %s.\n", strings.Join(plan.Authors, ", "))
 
 		if plan.Tail > 0 {
 			fmt.Fprintf(output, "Mais %d %s depois de %s serão preservados, só reencaixados em cima.\n",
-				plan.Tail, ui.Plural(plan.Tail, "commit", "commits"), until)
+				plan.Tail, ui.Plural(plan.Tail, "commit", "commits"), resolvedUntil)
 		}
 	}
 	fmt.Fprintf(output, "Recuperável com: git reset --hard %s\n", plan.Head)
@@ -89,7 +109,7 @@ func runAuthor(command *cobra.Command, repo *author.Repo, options authorOptions)
 		return nil
 	}
 
-	if err := repo.Rewrite(ctx, options.base, options.until, options.name, options.email); err != nil {
+	if err := repo.Rewrite(ctx, base, until, options.name, options.email); err != nil {
 		return err
 	}
 

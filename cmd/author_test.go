@@ -56,6 +56,73 @@ func authoredRange() map[string]gittest.Response {
 	}
 }
 
+// authoredCommit monta um repositório onde --commit deadbeef traduz para
+// --base deadbeef^ --until deadbeef por baixo: um commit só, com três
+// commits depois dele a preservar.
+func authoredCommit() map[string]gittest.Response {
+	return map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree":                      {Output: "true"},
+		authorShortHead:                                        {Output: "abc1234"},
+		authorRangeCount("deadbeef^", "deadbeef"):              {Output: "1"},
+		authorRangeAuthors("deadbeef^", "deadbeef"):            {Output: "Real Person <real@real.com>\n"},
+		authorRangeCount("deadbeef", "HEAD"):                   {Output: "3"},
+		"rev-parse deadbeef":                                   {Output: "untilsha"},
+		authorSymbolic:                                         {Output: "feature"},
+		authorRebaseExec("deadbeef^", "untilsha"):              {Output: ""},
+		"rev-parse HEAD":                                       {Output: "newuntilsha"},
+		authorRebaseOnto("newuntilsha", "untilsha", "feature"): {Output: ""},
+	}
+}
+
+func TestAuthorRewritesASingleCommit(t *testing.T) {
+	result := execute(t, authoredCommit(), "y\n", "author", "--name", "Fake Name", "--email", "fake@fake.com", "--commit", "deadbeef")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "Vai reescrever o commit deadbeef (hoje em Real Person <real@real.com>)") {
+		t.Errorf("saída = %q, queria o commit nomeado sem vazar a sintaxe de ^", result.stdout)
+	}
+	if strings.Contains(result.stdout, "deadbeef^") {
+		t.Errorf("saída = %q, a sintaxe interna de ^ não pode aparecer pro usuário", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "Mais 3 commits depois de deadbeef serão preservados, só reencaixados em cima.") {
+		t.Errorf("saída = %q, queria o aviso do rabo preservado", result.stdout)
+	}
+
+	var rebased bool
+	for _, call := range result.calls {
+		if call == authorRebaseExec("deadbeef^", "untilsha") {
+			rebased = true
+		}
+	}
+	if !rebased {
+		t.Errorf("chamadas = %v, --commit tinha de traduzir para --base <commit>^", result.calls)
+	}
+}
+
+func TestAuthorRefusesCommitWithBase(t *testing.T) {
+	result := execute(t, authored(), "", "author", "--name", "Fake Name", "--email", "fake@fake.com", "--commit", "deadbeef", "--base", "main")
+
+	if result.err == nil {
+		t.Fatal("--commit com --base não faz sentido, e tem de ser recusado")
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a validação vem antes de tocar no git", result.calls)
+	}
+}
+
+func TestAuthorRefusesCommitWithUntil(t *testing.T) {
+	result := execute(t, authored(), "", "author", "--name", "Fake Name", "--email", "fake@fake.com", "--commit", "deadbeef", "--until", "cafe")
+
+	if result.err == nil {
+		t.Fatal("--commit com --until não faz sentido, e tem de ser recusado")
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a validação vem antes de tocar no git", result.calls)
+	}
+}
+
 func TestAuthorRewritesTheLastCommit(t *testing.T) {
 	result := execute(t, authored(), "y\n", "author", "--name", "Fake Name", "--email", "fake@fake.com")
 
