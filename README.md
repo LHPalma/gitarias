@@ -2,9 +2,11 @@
 
 CLI de utilitários git em binário único. O binário chama `gtr`.
 
-Não é um cliente de GitHub: não pede token, não faz requisição de rede e não
-escreve em repositório remoto. O que a ferramenta faz é orquestrar o `git` que
-já está na sua máquina.
+O que a ferramenta faz é orquestrar o `git` que já está na sua máquina.
+**Nenhum comando sai da máquina sem dizer que sai** — hoje só o `gtr pr` e o
+`gtr doctor --online` saem, e os dois anunciam isso no `--help`. Nem esses
+pedem token: quem fala com o GitHub é o `gh`, e o `gtr` nunca vê a sua
+credencial.
 
 ## Instalação
 
@@ -318,13 +320,17 @@ Confere se o `gtr` funciona aqui, agora.
 ```
 $ gtr doctor
   ok  git          2.43.0
+  ok  temporário
   ok  repositório
-  ok  base         main
-  ok  gh           2.62.0
+  ok  árvore       sem operação em curso
+  ok  identidade   Luiz Palma <luiz@exemplo.com>
+  ok  base         main, declarada pelo remoto
+  ok  gh           2.45.0
 ```
 
 | Flag | Padrão | Efeito |
 |---|---|---|
+| `--online` | `false` | Acrescenta a checagem de conexão com o GitHub; **faz chamada de rede** |
 | `--strict` | `false` | Trata aviso como falha, para quem roda o `doctor` num portão de CI |
 | `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
 | `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
@@ -374,8 +380,137 @@ $ gtr doctor
                       só é preciso para os comandos de PR; o resto do gtr funciona sem ele. Instale em https://cli.github.com
 ```
 
+**Com `--online`, pergunta ao GitHub quem você é.** É a única checagem que sai
+da máquina, e por isso é flag e não padrão — o resto do `doctor` é local e
+termina sozinho, o que o torna barato de rodar por curiosidade.
+
+```
+$ gtr doctor --online
+  ...
+  ok     conexão      LHPalma
+
+$ gtr doctor --online        # sem credencial
+  falta  conexão      sem credencial para o GitHub
+                      entre com gh auth login, ou exporte GH_TOKEN com um token de acesso
+```
+
+O que ela afirma é estreito de propósito: que existe credencial e que o
+servidor a aceitou. **Não afirma que o token é válido** — um proxy que
+reautentica no caminho responde igual, e o `doctor` não afirma o que não mediu.
+
 No `json` o `state` é token — `ok`, `warning`, `failure`, `skipped` —, e no
 `csv` é o rótulo de tela.
+
+### `gtr undo`
+
+Recria as branches que o `gtr branches --clean` deletou por último. Apelido:
+`gtr rewind`.
+
+```
+$ gtr undo
+Deletadas em 2026-08-15 15:56 (2):
+  feat-a  0504044
+  feat-b  6756275
+
+Recriar 2 branches? [y/N] y
+  - feat-a recriada
+  - feat-b recriada
+```
+
+**O git não serve de apoio aqui, e é por isso que o `gtr` mantém diário
+próprio.** O reflog de uma branch é apagado junto com ela, e o reflog do `HEAD`
+só guarda a ponta se você esteve nela. O `gtr` anota nome e ponta em
+`<git-common-dir>/gtr/deleted` no momento em que deleta — e a ponta vem de
+`rev-parse`, não da frase que o git imprime.
+
+**Recusa em dois casos, e os separa:**
+
+```
+  - ocupada: já existe uma branch com esse nome, e o gtr não sobrescreve
+  - podada: o commit não está mais no repositório; o git já podou o que ficou inalcançável
+```
+
+O segundo é mais raro do que parece: branch mergeada por ancestralidade tem os
+commits alcançáveis a partir da base, e o `gc` nunca os leva. É a squashada e a
+rebaseada — as que só o `--force` apaga — que ficam inalcançáveis. **A rede é
+mais fina justamente onde a deleção era mais arriscada.**
+
+### `gtr weight`
+
+Mostra o que mais pesa no histórico. Apelido: `gtr roadie`.
+
+```
+$ gtr weight
+Um clone deste repositório baixa 2.9 MB.
+
+  2.9 MB  1 versão   build.zip  só no histórico
+  34 B    2 versões  app.go     na árvore
+```
+
+**Apagar um arquivo não o tira do repositório.** O commit em que ele existia
+continua no histórico, o objeto segue alcançável, e todo clone continua
+baixando aquele blob — inclusive quem entrou anos depois e nunca vai vê-lo. O
+`git gc` não resolve: o objeto não é lixo, é história.
+
+A coluna `só no histórico` é o comando inteiro — é onde costuma estar o peso
+que ninguém explica.
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--limit <n>` | `10` | Quantos caminhos mostrar; `0` traz todos |
+
+O tamanho medido é o **em disco**, não o lógico: é o que um clone paga. Na tela
+sai legível (`2.9 MB`); no `csv` e no `json`, cru (`3000000`).
+
+**Diagnostica e não conserta.** Expurgar um blob é reescrever o histórico —
+todo SHA dali para frente muda, e todo clone e PR existente quebra.
+
+### `gtr setup`
+
+Diz o que falta e qual comando resolve **na sua máquina**. Apelido:
+`gtr luthier`.
+
+```
+$ gtr setup
+Detectei ubuntu 24.04, com apt-get.
+
+git — não encontrado no PATH:
+    sudo apt-get update
+    sudo apt-get install -y git
+```
+
+Detecta entre `apt-get`, `dnf`, `pacman`, `zypper`, `apk`, `brew`, `winget`,
+`choco` e `scoop`, e põe `sudo` só quando o gerenciador precisa e você não é
+root. O nome do pacote nem sempre é o do comando — no Arch o `gh` é
+`github-cli`, no winget o git é `Git.Git`.
+
+**Imprime e não executa.** Sem gerenciador reconhecido, cai na página oficial
+em vez de inventar comando. E só ferramenta ausente ganha linha de instalação:
+um git velho demais não se resolve com `apt-get install`, e prometer que sim
+engana.
+
+### `gtr pr list`
+
+Lista os pull requests abertos. **Faz chamada de rede** — é o primeiro comando
+do `gtr` que sai da máquina, e diz isso no `--help`.
+
+```
+$ gtr pr list
+  #7  aberto    feat-parser  muda o parser
+  #8  rascunho  feat-outra   ainda cozinhando
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--limit <n>` | `30` | Quantos pull requests trazer |
+
+Quem fala com o GitHub é o `gh`, que resolve autenticação, host de Enterprise e
+qual repositório é o do diretório atual — **o `gtr` nunca vê o seu token**. Sem
+o `gh`, o erro manda rodar `gtr setup`; com ele presente e recusado, sobe a
+mensagem do próprio `gh`.
+
+Há um prazo de 30 segundos. Toda outra operação do `gtr` é local e termina
+sozinha; um servidor calado não termina.
 
 ### `gtr ignore list`
 
@@ -494,6 +629,17 @@ Estas não são configurações — são propriedades do código:
   diretamente, sem `sh -c`. Uma branch com nome esquisito chega ao git como
   argumento literal, e o comando de verificação do `commits check` chega como o
   `argv` que veio depois do `--`, sem ser reparseado.
+- **Nunca vê a sua credencial do GitHub.** Os comandos que falam com o GitHub
+  chamam o `gh`, que já resolve autenticação, host de Enterprise e qual
+  repositório é o do diretório atual. Nenhum token passa pelo `gtr`, nem por
+  variável de ambiente, nem por `argv`.
+- **Nunca sai da máquina sem dizer.** Apenas `gtr pr` e `gtr doctor --online`
+  fazem requisição de rede, e ambos declaram isso no `--help`. O `doctor` sem a
+  flag, e todo o resto, é local — é isso que o torna barato de rodar por
+  curiosidade.
+- **Nunca instala nada.** O `gtr setup` imprime o comando de instalação da sua
+  máquina; quem executa é você. Um binário que pede senha de root para agir
+  sozinho é um hábito que não vale ensinar.
 
 ## Saída e códigos
 
@@ -517,10 +663,14 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 
 ## Estado
 
-Os comandos `branches`, `worktrees`, `commits check` e `ignore list` estão no
-ar, os quatro com `--format`, mais o `licenses` e o `doctor`. Planejados: seleção interativa de quais branches
-apagar, `gtr split` para quebrar a árvore suja em vários commits,
-`gtr ignore add`, `stats`, `changelog` e arquivo de configuração opcional.
+No ar: `branches` (com `--tree`), `worktrees`, `commits check`, `ignore list`,
+`licenses`, `doctor`, `undo`, `weight`, `setup` e `pr list`. Todos aceitam
+`--format`, menos o `licenses`, que imprime texto de licença, e o `undo`, que é
+interativo.
+
+Planejados: seleção interativa de quais branches apagar, `gtr split` para
+quebrar a árvore suja em vários commits, `gtr ignore add`, `stats`, `changelog`
+e arquivo de configuração opcional.
 
 ## Licença
 
