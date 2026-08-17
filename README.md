@@ -466,6 +466,38 @@ sai legível (`2.9 MB`); no `csv` e no `json`, cru (`3000000`).
 **Diagnostica e não conserta.** Expurgar um blob é reescrever o histórico —
 todo SHA dali para frente muda, e todo clone e PR existente quebra.
 
+### `gtr churn`
+
+Quais arquivos mais mudam no histórico do `HEAD` atual — não quanto pesam
+(isso é o `weight`), quantas vezes foram tocados.
+
+```
+$ gtr churn
+  3 commits  core.go    na árvore
+  1 commit   README.md  na árvore
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--limit <n>` | `10` | Quantos caminhos mostrar; `0` traz todos |
+| `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
+| `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
+| `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
+| `--no-header` | `false` | Só com `csv` ou `tsv`. Omite a linha de nomes das colunas |
+
+**Arquivo que muda toda hora concentra risco**, mesmo pesando pouco — é o
+oposto do que o `weight` mostra. `README.md` pode pesar quase nada e mudar
+duzentas vezes; um binário grande pode nunca mais ser tocado depois do
+primeiro commit.
+
+Vem de `git log --name-only`, uma passada só pelo histórico, com
+`--no-renames` travado: sem essa flag, um arquivo renomeado conta como um
+caminho só ou como dois dependendo do `diff.renames` configurado em cada
+máquina. Aqui um renomeio sempre toca os dois caminhos, o antigo e o novo, do
+mesmo jeito em qualquer lugar que rodar. Commit de merge não entra na
+contagem — é o comportamento padrão do `git log` para `--name-only`, e conta
+só quem de fato tocou o arquivo, não quem só reuniu o trabalho de outros.
+
 ### `gtr stats`
 
 Quantos commits cada autor tem no histórico do `HEAD` atual.
@@ -719,9 +751,9 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 ## Estado
 
 No ar: `branches` (com `--tree`), `worktrees`, `commits check`, `ignore list`,
-`licenses`, `doctor`, `undo`, `weight`, `setup`, `pr list` e `stats`. Todos
-aceitam `--format`, menos o `licenses`, que imprime texto de licença, e o
-`undo`, que é interativo.
+`licenses`, `doctor`, `undo`, `weight`, `churn`, `setup`, `pr list` e `stats`.
+Todos aceitam `--format`, menos o `licenses`, que imprime texto de licença, e
+o `undo`, que é interativo.
 
 Planejados: seleção interativa de quais branches apagar, `gtr split` para
 quebrar a árvore suja em vários commits, `gtr ignore add`, `stats`, `changelog`
