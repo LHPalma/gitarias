@@ -431,3 +431,47 @@ func TestDoctorStrictFailsWithoutGh(t *testing.T) {
 		t.Fatal("com --strict o aviso do gh derruba, que é o ponto de um portão de CI")
 	}
 }
+
+func TestDoctorStaysLocalWithoutTheFlag(t *testing.T) {
+	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor")
+
+	if strings.Contains(result.stdout, "conexão") {
+		t.Errorf("saída = %q; o doctor é local por padrão, e é isso que o torna barato de rodar por curiosidade", result.stdout)
+	}
+}
+
+func TestDoctorOnlineAsksTheGitHubWhoWeAre(t *testing.T) {
+	outcomes := append(gitFound(), exectest.Response{Result: exec.Result{Output: `{"login":"LHPalma"}`}})
+
+	result := diagnosingIn(t, healthyRepository(), outcomes, "doctor", "--online")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "conexão") || !strings.Contains(result.stdout, "LHPalma") {
+		t.Errorf("saída = %q, queria a checagem de conexão", result.stdout)
+	}
+}
+
+func TestDoctorOnlineFailsWithoutCredential(t *testing.T) {
+	outcomes := append(gitFound(), exectest.Response{
+		Result: exec.Result{Code: 4, Output: "please run: gh auth login"},
+	})
+
+	result := diagnosingIn(t, healthyRepository(), outcomes, "doctor", "--online")
+
+	if result.err == nil {
+		t.Fatal("sem credencial os comandos de PR não funcionam, e isso é falha")
+	}
+	if !strings.Contains(result.stdout, "gh auth login") {
+		t.Errorf("saída = %q, queria como entrar", result.stdout)
+	}
+}
+
+func TestDoctorDeclaresTheNetworkOfTheFlag(t *testing.T) {
+	result := diagnosing(t, nil, "doctor", "--help")
+
+	if !strings.Contains(result.stdout, "REDE") {
+		t.Errorf("ajuda = %q; a flag leva o comando para fora da máquina, e isso tem de estar dito", result.stdout)
+	}
+}
