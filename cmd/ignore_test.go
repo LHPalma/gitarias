@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -12,6 +14,7 @@ import (
 	"github.com/LHPalma/gitarias/internal/format"
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/git/gittest"
+	"github.com/spf13/cobra"
 )
 
 func ignoring(candidates string, matches string) map[string]gittest.Response {
@@ -159,6 +162,76 @@ func TestIgnoreListCommandExpands(t *testing.T) {
 		if strings.Contains(call, "--directory") {
 			t.Fatalf("com --expand nada pode ser colapsado, mas rodou %q", call)
 		}
+	}
+}
+
+func expandedListingFor(dir string) string {
+	return "ls-files --others --ignored --exclude-standard -z -- " + dir
+}
+
+func TestIgnoreListCommandExpandsOnlyTheRequestedDirectory(t *testing.T) {
+	responses := ignoring("dist/\x00node_modules/\x00", ""+
+		".gitignore\x001\x00dist/\x00dist/app.js\x00"+
+		".gitignore\x002\x00node_modules/\x00node_modules/\x00")
+	responses[expandedListingFor("dist/")] = gittest.Response{Output: "dist/app.js\x00"}
+
+	result := execute(t, responses, "", "ignore", "list", "--expand-dir", "dist/")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "dist/app.js") {
+		t.Errorf("saída = %q, dist/ tinha de vir expandido", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "node_modules/") {
+		t.Errorf("saída = %q, node_modules/ não foi pedido e tinha de continuar colapsado", result.stdout)
+	}
+}
+
+func TestIgnoreListCommandExpandDirCanRepeat(t *testing.T) {
+	responses := ignoring("dist/\x00node_modules/\x00", ""+
+		".gitignore\x001\x00dist/\x00dist/app.js\x00"+
+		".gitignore\x002\x00node_modules/\x00node_modules/react\x00")
+	responses[expandedListingFor("dist/")] = gittest.Response{Output: "dist/app.js\x00"}
+	responses[expandedListingFor("node_modules/")] = gittest.Response{Output: "node_modules/react\x00"}
+
+	result := execute(t, responses, "", "ignore", "list", "--expand-dir", "dist/", "--expand-dir", "node_modules/")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "dist/app.js") || !strings.Contains(result.stdout, "node_modules/react") {
+		t.Errorf("saída = %q, os dois diretórios pedidos tinham de vir expandidos", result.stdout)
+	}
+}
+
+func TestIgnoreListCommandRefusesExpandAndExpandDirTogether(t *testing.T) {
+	result := execute(t, populated(), "", "ignore", "list", "--expand", "--expand-dir", "dist/")
+
+	if result.err == nil {
+		t.Fatal("--expand já cobre --expand-dir; a combinação tem de ser recusada e não a maior vencendo calada")
+	}
+	if result.stdout != "" {
+		t.Errorf("RN-09: nada pode ir para o stdout, veio %q", result.stdout)
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a validação da combinação vem antes de tocar no git", result.calls)
+	}
+}
+
+func TestIgnoreListCommandRefusesAnExpandDirThatIsNotCollapsed(t *testing.T) {
+	responses := ignoring("dist/\x00", ".gitignore\x001\x00dist/\x00dist/\x00")
+
+	result := execute(t, responses, "", "ignore", "list", "--expand-dir", "vendor/")
+
+	if result.err == nil {
+		t.Fatal("diretório que o git não colapsou tem de virar erro")
+	}
+	if !strings.Contains(result.err.Error(), "vendor/") {
+		t.Errorf("erro = %v, queria nomear o que foi pedido", result.err)
+	}
+	if result.stdout != "" {
+		t.Errorf("RN-09: nada pode ir para o stdout, veio %q", result.stdout)
 	}
 }
 
@@ -618,6 +691,100 @@ func TestIgnoreListCommandRefusesNoHeaderOutsideTheDelimitedFormats(t *testing.T
 				t.Errorf("chamadas = %v, a validação da flag vem antes de tocar no git", result.calls)
 			}
 		})
+	}
+}
+
+func ignoreListCommand(t *testing.T, responses map[string]gittest.Response) *cobra.Command {
+	t.Helper()
+
+	root := NewRootCommand(gittest.NewRunner(responses), noCommands(), noFinder(), noNotices)
+
+	command, _, err := root.Find([]string{"ignore", "list"})
+	if err != nil {
+		t.Fatalf("não encontrei o subcomando: %v", err)
+	}
+	command.SetContext(context.Background())
+
+	return command
+}
+
+func expandDirCompletion(t *testing.T, command *cobra.Command) func(string) ([]string, cobra.ShellCompDirective) {
+	t.Helper()
+
+	completionFunc, registered := command.GetFlagCompletionFunc("expand-dir")
+	if !registered {
+		t.Fatal("--expand-dir tinha de ter completion registrada")
+	}
+
+	return func(toComplete string) ([]string, cobra.ShellCompDirective) {
+		return completionFunc(command, nil, toComplete)
+	}
+}
+
+func TestExpandDirCompletionSuggestsTheCollapsedDirectories(t *testing.T) {
+	command := ignoreListCommand(t, ignoring("dist/\x00node_modules/\x00", ""+
+		".gitignore\x001\x00dist/\x00dist/\x00"+
+		".gitignore\x002\x00node_modules/\x00node_modules/\x00"))
+
+	suggestions, directive := expandDirCompletion(t, command)("")
+
+	if directive != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("directive = %v, queria NoFileComp para não cair na completion de arquivo do shell", directive)
+	}
+	if want := []string{"dist/", "node_modules/"}; !slices.Equal(suggestions, want) {
+		t.Errorf("sugestões = %v, queria %v", suggestions, want)
+	}
+}
+
+func TestExpandDirCompletionFiltersByThePrefixAlreadyTyped(t *testing.T) {
+	command := ignoreListCommand(t, ignoring("dist/\x00node_modules/\x00", ""+
+		".gitignore\x001\x00dist/\x00dist/\x00"+
+		".gitignore\x002\x00node_modules/\x00node_modules/\x00"))
+
+	suggestions, _ := expandDirCompletion(t, command)("node")
+
+	if want := []string{"node_modules/"}; !slices.Equal(suggestions, want) {
+		t.Errorf("sugestões = %v, queria só o que casa com o prefixo, %v", suggestions, want)
+	}
+}
+
+func TestExpandDirCompletionNeverSuggestsAFile(t *testing.T) {
+	command := ignoreListCommand(t, ignoring("app.log\x00", ".gitignore\x002\x00*.log\x00app.log\x00"))
+
+	suggestions, _ := expandDirCompletion(t, command)("")
+
+	if len(suggestions) != 0 {
+		t.Errorf("sugestões = %v, arquivo colapsado não é diretório e --expand-dir não o aceita", suggestions)
+	}
+}
+
+func TestExpandDirCompletionOutsideRepository(t *testing.T) {
+	command := ignoreListCommand(t, map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Err: errNotARepository},
+	})
+
+	suggestions, directive := expandDirCompletion(t, command)("")
+
+	if directive != cobra.ShellCompDirectiveError {
+		t.Errorf("directive = %v, queria Error para não vazar a falha como se fosse sugestão", directive)
+	}
+	if suggestions != nil {
+		t.Errorf("sugestões = %v, queria nenhuma", suggestions)
+	}
+}
+
+func TestExpandDirCompletionPropagatesListFailure(t *testing.T) {
+	responses := ignoring("", "")
+	responses["ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z"] =
+		gittest.Response{Err: errNotARepository}
+
+	suggestions, directive := expandDirCompletion(t, ignoreListCommand(t, responses))("")
+
+	if directive != cobra.ShellCompDirectiveError {
+		t.Errorf("directive = %v, queria Error", directive)
+	}
+	if suggestions != nil {
+		t.Errorf("sugestões = %v, queria nenhuma", suggestions)
 	}
 }
 

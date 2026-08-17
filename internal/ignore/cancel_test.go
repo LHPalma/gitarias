@@ -19,7 +19,7 @@ func TestIgnoreOperationsCarryTheCancellation(t *testing.T) {
 	if err := repo.Ensure(ctx); err == nil {
 		t.Error("Ensure tem de recusar o contexto cancelado")
 	}
-	if _, err := repo.List(ctx, false); err == nil {
+	if _, err := repo.List(ctx, false, nil); err == nil {
 		t.Error("List tem de recusar o contexto cancelado")
 	}
 }

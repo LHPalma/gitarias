@@ -1,13 +1,16 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/LHPalma/gitarias/internal/ignore"
 	"github.com/spf13/cobra"
 )
 
 type ignoreListOptions struct {
 	formatOptions
-	expand bool
+	expand     bool
+	expandDirs []string
 }
 
 func newIgnoreCommand(runner Runner) *cobra.Command {
@@ -34,7 +37,13 @@ func newIgnoreListCommand(runner Runner) *cobra.Command {
 	}
 
 	command.Flags().BoolVar(&options.expand, "expand", false, "lista arquivo a arquivo em vez de colapsar o diretório ignorado")
+	command.Flags().StringArrayVar(&options.expandDirs, "expand-dir", nil,
+		"expande só o(s) diretório(s) informado(s) em vez de colapsar; repetível, incompatível com --expand")
 	options.register(command)
+
+	if err := command.RegisterFlagCompletionFunc("expand-dir", completeExpandDir(runner)); err != nil {
+		panic(err)
+	}
 
 	return command
 }
@@ -45,13 +54,17 @@ func runIgnoreList(command *cobra.Command, repo *ignore.Repo, options ignoreList
 		return err
 	}
 
+	if options.expand && len(options.expandDirs) > 0 {
+		return fmt.Errorf("--expand já expande tudo; --expand-dir junto seria descartado em silêncio")
+	}
+
 	ctx := command.Context()
 
 	if err := repo.Ensure(ctx); err != nil {
 		return err
 	}
 
-	entries, err := repo.List(ctx, options.expand)
+	entries, err := repo.List(ctx, options.expand, options.expandDirs)
 	if err != nil {
 		return err
 	}
