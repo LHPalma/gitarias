@@ -24,15 +24,29 @@ func NewRootCommand(runner Runner, commands exec.Runner, finder platform.Finder,
 	command.AddCommand(newBranchesCommand(runner))
 	command.AddCommand(newCommitsCommand(runner, commands))
 	command.AddCommand(newDoctorCommand(runner, commands))
+	command.AddCommand(newFavoriteBandCommand())
 	command.AddCommand(newIgnoreCommand(runner))
 	command.AddCommand(newLicensesCommand(notices))
 	command.AddCommand(newPullRequestCommand(runner, commands))
 	command.AddCommand(newSetupCommand(runner, commands, finder))
+	command.AddCommand(newStatsCommand(runner))
 	command.AddCommand(newUndoCommand(runner))
 	command.AddCommand(newWeightCommand(runner))
 	command.AddCommand(newWorktreesCommand(runner))
 
 	return command
+}
+
+func newFavoriteBandCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:    "favorite-band",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(command *cobra.Command, args []string) error {
+			_, err := fmt.Fprintln(command.OutOrStdout(), "Alice In Chains")
+			return err
+		},
+	}
 }
 
 func Run(command *cobra.Command) int {
