@@ -380,7 +380,8 @@ $ gtr doctor
                       só é preciso para os comandos de PR; o resto do gtr funciona sem ele. Instale em https://cli.github.com
 ```
 
-**Com `--online`, pergunta ao GitHub quem você é.** É a única checagem que sai
+**Com `--online`, pergunta ao GitHub quem você é.** Guitarra desplugada toca
+sozinha; plugada precisa do cabo — daí o apelido `--plugged` valer pela flag. É a única checagem que sai
 da máquina, e por isso é flag e não padrão — o resto do `doctor` é local e
 termina sozinho, o que o torna barato de rodar por curiosidade.
 

@@ -10,6 +10,7 @@ import (
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/ui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type doctorOptions struct {
@@ -35,6 +36,7 @@ func newDoctorCommand(runner git.Runner, commands exec.Runner) *cobra.Command {
 		},
 	}
 
+	command.Flags().SetNormalizeFunc(plugged)
 	command.Flags().BoolVar(&options.online, "online", false, "acrescenta a checagem de conexão com o GitHub; faz chamada de rede")
 	command.Flags().BoolVar(&options.strict, "strict", false, "trata aviso como falha, para quem roda o doctor num portão de CI")
 	options.register(command)
@@ -67,4 +69,19 @@ func runDoctor(command *cobra.Command, examiner *doctor.Doctor, source forge.Sou
 	}
 
 	return nil
+}
+
+// plugged é o apelido da --online, e o pflag não tem alias de flag: tem
+// normalização de nome, que é onde ele cabe. Guitarra desplugada é acústica e
+// toca sozinha; plugada precisa do cabo — que é a diferença entre o doctor
+// local e o que sai da máquina.
+//
+// Fica fora da ajuda pelo mesmo motivo dos apelidos de comando: o nome
+// anunciado é o óbvio, e este é para quem procurar.
+func plugged(flags *pflag.FlagSet, name string) pflag.NormalizedName {
+	if name == "plugged" {
+		name = "online"
+	}
+
+	return pflag.NormalizedName(name)
 }

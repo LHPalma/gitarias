@@ -475,3 +475,37 @@ func TestDoctorDeclaresTheNetworkOfTheFlag(t *testing.T) {
 		t.Errorf("ajuda = %q; a flag leva o comando para fora da máquina, e isso tem de estar dito", result.stdout)
 	}
 }
+
+func TestPluggedIsTheSameFlag(t *testing.T) {
+	outcomes := append(gitFound(), exectest.Response{Result: exec.Result{Output: `{"login":"LHPalma"}`}})
+	byName := diagnosingIn(t, healthyRepository(), outcomes, "doctor", "--online")
+
+	outcomes = append(gitFound(), exectest.Response{Result: exec.Result{Output: `{"login":"LHPalma"}`}})
+	byAlias := diagnosingIn(t, healthyRepository(), outcomes, "doctor", "--plugged")
+
+	if byAlias.err != nil {
+		t.Fatalf("o apelido tem de valer pela flag, veio %v", byAlias.err)
+	}
+	if byAlias.stdout != byName.stdout {
+		t.Errorf("apelido = %q, nome = %q; é a mesma flag", byAlias.stdout, byName.stdout)
+	}
+}
+
+func TestPluggedStaysOutOfTheHelp(t *testing.T) {
+	result := diagnosing(t, nil, "doctor", "--help")
+
+	if strings.Contains(result.stdout, "plugged") {
+		t.Errorf("ajuda = %q; o apelido é um easter egg e o nome anunciado é o óbvio", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "--online") {
+		t.Errorf("ajuda = %q, o nome de verdade continua anunciado", result.stdout)
+	}
+}
+
+func TestTheOtherFlagsSurviveTheNormaliser(t *testing.T) {
+	result := diagnosingIn(t, repositoryWithoutBase(), gitFound(), "doctor", "--strict")
+
+	if result.err == nil {
+		t.Fatal("normalizar nome de flag não pode quebrar as outras flags do comando")
+	}
+}
