@@ -436,6 +436,74 @@ commits alcançáveis a partir da base, e o `gc` nunca os leva. É a squashada e
 rebaseada — as que só o `--force` apaga — que ficam inalcançáveis. **A rede é
 mais fina justamente onde a deleção era mais arriscada.**
 
+### `gtr author`
+
+Reescreve a autoria de commits. Apelido: `gtr blame-someone-else`, uma
+referência direta ao projeto de mesmo nome — e a piada é literal: o comando
+pode atribuir a autoria a qualquer nome e e-mail informados, não só corrigir
+a sua própria identidade.
+
+```
+$ gtr author --name "Fulano Sênior" --email fulano@empresa.com
+Vai reescrever o commit mais recente, hoje em nome de Estagiário <intern@empresa.com>, para Fulano Sênior <fulano@empresa.com>.
+Recuperável com: git reset --hard 0b521de
+Confirma? [y/N] y
+Pronto.
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--name <nome>` | vazio | O nome a atribuir (obrigatório) |
+| `--email <e-mail>` | vazio | O e-mail a atribuir (obrigatório) |
+| `--base <ref>` | vazio | Reescreve `<ref>..HEAD` em vez de só o commit mais recente; `<ref>` fica de fora |
+| `--until <ref>` | vazio | Com `--base`, fecha o intervalo antes do `HEAD`; o que vem depois de `<ref>` é preservado |
+
+**É uma reescrita de história de verdade.** Sem `--base`, é um
+`commit --amend --reset-author` mais direto — só o SHA do topo muda. Com
+`--base`, é um `git rebase <base> --exec 'commit --amend --reset-author'` —
+toda a cadeia de SHAs dali para a frente muda, e todo clone e PR que já
+tinham os commits antigos quebram.
+
+**`--base` some tudo até o `HEAD`; `--until` fecha antes disso, preservando o
+resto.** Com `--base main --until <ref>`, os commits depois de `<ref>`
+continuam exatamente como estavam — mesmo conteúdo, mesma autoria —, só
+reencaixados em cima do trecho reescrito:
+
+```
+$ gtr author --name "Fulano Sênior" --email fulano@empresa.com --base main --until e953185
+Vai reescrever 2 commits (main..e953185) para Fulano Sênior <fulano@empresa.com>.
+Autores atuais no intervalo: Real Person <real@real.com>.
+Mais 2 commits depois de e953185 serão preservados, só reencaixados em cima.
+Recuperável com: git reset --hard 28d1dc2
+Confirma? [y/N] y
+Pronto.
+```
+
+Por baixo são duas passadas: a primeira reescreve `base..until` com o `HEAD`
+destacado nele; a segunda reencaixa em cima (`rebase --onto`) o que ficou
+para trás, sem tocar no conteúdo. Testado também a partir de `HEAD` já
+destacado (sem branch) e com `--until` igual ao próprio `HEAD`, onde o
+reencaixe não tem nada para mover.
+
+**A prévia sempre lista quem são os autores atuais do intervalo**, antes de
+perguntar. `--base`/`--until` cortam por alcançabilidade, não por autoria —
+numa `main` desatualizada, o intervalo pode incluir commits de outras
+pessoas, e a lista é o que avisa disso antes de reatribuir tudo.
+
+**Sempre pergunta antes, e sempre imprime como desfazer.** A linha
+`Recuperável com: git reset --hard <sha>` sai antes da pergunta, não depois —
+`[y/N]`, qualquer coisa que não seja `y`/`yes`/`s`/`sim` cancela, inclusive
+Enter vazio. Não tem `--force` para pular a pergunta.
+
+**Autor e committer mudam juntos**, e os dois vão pelo ambiente do processo —
+`GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/
+`GIT_COMMITTER_EMAIL` —, nunca por um argumento interpolado dentro do
+`--exec` do rebase. O `--exec` roda por um shell; um nome com `$(...)` ou
+crase interpolado ali seria injeção de shell pelo próprio dado que o comando
+existe para reatribuir. Medido contra um nome assim antes de decidir pela
+forma com variável de ambiente: com ela, o git trata o texto como identidade
+e nada executa.
+
 ### `gtr weight`
 
 Mostra o que mais pesa no histórico. Apelido: `gtr roadie`.
@@ -751,9 +819,9 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 ## Estado
 
 No ar: `branches` (com `--tree`), `worktrees`, `commits check`, `ignore list`,
-`licenses`, `doctor`, `undo`, `weight`, `churn`, `setup`, `pr list` e `stats`.
-Todos aceitam `--format`, menos o `licenses`, que imprime texto de licença, e
-o `undo`, que é interativo.
+`licenses`, `doctor`, `undo`, `author`, `weight`, `churn`, `setup`, `pr list`
+e `stats`. Todos aceitam `--format`, menos o `licenses`, que imprime texto de
+licença, e o `undo` e o `author`, que são interativos.
 
 Planejados: seleção interativa de quais branches apagar, `gtr split` para
 quebrar a árvore suja em vários commits, `gtr ignore add`, `stats`, `changelog`
