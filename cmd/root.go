@@ -21,6 +21,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, finder platform.Finder,
 		SilenceUsage:  true,
 	}
 
+	command.AddCommand(newAuthorCommand(runner))
 	command.AddCommand(newBranchesCommand(runner))
 	command.AddCommand(newChurnCommand(runner))
 	command.AddCommand(newCommitsCommand(runner, commands))
