@@ -26,6 +26,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, finder platform.Finder,
 	command.AddCommand(newDoctorCommand(runner, commands))
 	command.AddCommand(newIgnoreCommand(runner))
 	command.AddCommand(newLicensesCommand(notices))
+	command.AddCommand(newPullRequestCommand(runner, commands))
 	command.AddCommand(newSetupCommand(runner, commands, finder))
 	command.AddCommand(newUndoCommand(runner))
 	command.AddCommand(newWeightCommand(runner))

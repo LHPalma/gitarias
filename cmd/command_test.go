@@ -552,3 +552,21 @@ func TestBranchesCommandPropagatesHeldSectionWriteFailure(t *testing.T) {
 func noFinder() platform.Finder {
 	return platformtest.Finder{System: "linux"}
 }
+
+// executeWith roda o comando com respostas de git e de processo externo, para
+// quem precisa dos dois roteirizados.
+func executeWith(t *testing.T, responses map[string]gittest.Response, outcomes []exectest.Response, args ...string) execution {
+	t.Helper()
+
+	runner := gittest.NewRunner(responses)
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+
+	command := NewRootCommand(runner, exectest.NewRunner(outcomes...), noFinder(), noNotices)
+	command.SetOut(stdout)
+	command.SetErr(stderr)
+	command.SetArgs(args)
+
+	err := command.Execute()
+
+	return execution{stdout: stdout.String(), stderr: stderr.String(), err: err, calls: runner.Calls}
+}
