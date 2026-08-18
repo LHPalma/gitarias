@@ -647,6 +647,49 @@ Autores (1):
 É leitura local, sem rede — só `git log`. Repositório sem nenhum commit ainda
 não é erro: `Nenhum commit encontrado.`
 
+### `gtr profile`
+
+Métricas sobre a **sua própria** identidade de git neste repositório —
+diferente do `gtr stats`, que conta todo mundo. Cada métrica é uma flag
+própria; hoje só existe uma:
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--commit-count` | `false` | A métrica: quantos commits seus caem no período. Obrigatória — sem ela, o comando recusa |
+| `--since <data>` | hoje | Início do período, `AAAA-MM-DD`. Sem `--until`, vai até hoje |
+| `--until <data>` | hoje | Fim do período, `AAAA-MM-DD`. Sem `--since`, começa hoje |
+
+Sem nenhuma das duas datas, o período é só hoje:
+
+```
+$ gtr profile --commit-count
+1 commit em 2026-08-18.
+```
+
+Mesmo valor nas duas conta um dia certo; valores diferentes contam um
+intervalo:
+
+```
+$ gtr profile --commit-count --since 2026-08-15 --until 2026-08-15
+2 commits em 2026-08-15.
+$ gtr profile --commit-count --since 2026-08-15 --until 2026-08-16
+3 commits entre 2026-08-15 e 2026-08-16.
+```
+
+**A identidade é a que já está configurada no repositório** —
+`git config user.email`, ou `user.name` se só ele estiver — nunca uma flag
+`--author`: é o seu perfil, não o de qualquer um. Sem nenhum dos dois
+configurados, o erro manda configurar.
+
+**As duas pontas do dia são explícitas por baixo, nunca a data nua.**
+`git log --since=2026-08-15` sozinho não vale meia-noite daquele dia — vale a
+hora corrente de agora, naquele dia —, e `--since` igual a `--until` dava
+**zero** mesmo com commit dentro do dia. Medido contra o git antes de decidir:
+por baixo, `--since` vira `<data> 00:00:00` e `--until` vira
+`<data> 23:59:59`, sempre.
+
+É leitura local, sem rede — só `git log` e `git config`.
+
 ### `gtr setup`
 
 Diz o que falta e qual comando resolve **na sua máquina**. Apelido:
