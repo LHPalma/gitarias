@@ -3,10 +3,12 @@
 CLI de utilitários git em binário único. O binário chama `gtr`.
 
 O que a ferramenta faz é orquestrar o `git` que já está na sua máquina.
-**Nenhum comando sai da máquina sem dizer que sai** — hoje só o `gtr pr` e o
-`gtr doctor --online` saem, e os dois anunciam isso no `--help`. Nem esses
-pedem token: quem fala com o GitHub é o `gh`, e o `gtr` nunca vê a sua
-credencial.
+**Nenhum comando sai da máquina sem dizer que sai** — hoje `gtr pr` e
+`gtr doctor --online` saem falando com o GitHub através do `gh`, e
+`gtr riff` e `gtr fire` saem falando HTTP puro com uma API pública
+(`whatthecommit.com`), sem chave nem token. Os quatro anunciam isso no
+`--help`. Nem os dois primeiros pedem token: quem fala com o GitHub é o `gh`,
+e o `gtr` nunca vê a sua credencial.
 
 ## Instalação
 
@@ -692,6 +694,70 @@ mensagem do próprio `gh`.
 Há um prazo de 30 segundos. Toda outra operação do `gtr` é local e termina
 sozinha; um servidor calado não termina.
 
+### `gtr riff`
+
+Imprime uma mensagem de commit aleatória do `whatthecommit.com`. Apelido:
+`gtr whatthecommit`. **Faz chamada de rede** — é o único comando do `gtr` que
+fala com a internet sem passar pelo `gh`: HTTP puro contra uma API pública,
+sem chave e sem autenticação.
+
+Numa máquina com saída de rede liberada para esse domínio, a saída é a
+mensagem, sozinha, numa linha — mesma fonte testada ao vivo nesta sessão
+(`No cap`, `Blaming regex.`, `Landed.`, entre outras). Neste ambiente de
+desenvolvimento o proxy de saída bloqueia o domínio, e é isso que a chamada
+real contra o binário mostra:
+
+```
+$ gtr riff
+erro: Get "https://whatthecommit.com/index.txt": Forbidden
+```
+
+Serve para alimentar outro comando, como o próprio `git commit`:
+
+```
+$ git commit -m "$(gtr riff)"
+```
+
+É a mesma fonte que o `gtr fire` usa para a mensagem do commit — ver a seção
+a seguir, inclusive o que acontece quando ela falha.
+
+### `gtr fire`
+
+Comita tudo que está sujo — rastreado ou não, staged ou não — e empurra para
+uma branch nova no remoto, sem perguntar nada. É o botão de pânico, inspirado
+no projeto de piada `git-fire`. Apelido: `gtr jam` — "estar num jam" é estar
+numa enrascada, e jam também é a sessão de improviso. A branch local atual
+também fica com o commit; só o destino remoto é novo, para não mexer no que
+já estava rastreado lá.
+
+```
+$ gtr fire
+Salvo em fire/0484d95: "🔥 fire"
+Recuperável com: git reset --hard a9dff83
+```
+
+A branch nova nasce do SHA do próprio commit (`fire/<sha>`), não de um
+carimbo de hora — não depende do relógio e não colide entre duas chamadas
+rápidas que produzam commits diferentes. Sem nada sujo para salvar, o comando
+não toca em nada:
+
+```
+$ gtr fire
+Nada sujo para salvar.
+```
+
+**Faz chamada de rede** para a mensagem do commit, pela mesma fonte do
+`gtr riff` — se ela falhar, ou este ambiente não tiver saída para o domínio,
+a mensagem cai para uma fixa (`🔥 fire`) e o comando segue em frente: pânico
+não espera a internet, e é por isso que a chamada por trás nunca pode falhar
+o `fire` inteiro.
+
+**Sem confirmação, de propósito** — é a única exceção nesse sentido no `gtr`.
+O resto da ferramenta sempre pergunta antes de mexer no remoto (**ADR-008**);
+aqui, a piada inteira é não perguntar. A linha `Recuperável com:` continua
+saindo, porque nada que muda estado local deixa de dizer como desfazer —
+só que aqui ninguém espera a confirmação para agir.
+
 ### `gtr ignore list`
 
 Lista o que está sendo ignorado e **por qual regra** — pergunta que o git só
@@ -833,10 +899,12 @@ Estas não são configurações — são propriedades do código:
   chamam o `gh`, que já resolve autenticação, host de Enterprise e qual
   repositório é o do diretório atual. Nenhum token passa pelo `gtr`, nem por
   variável de ambiente, nem por `argv`.
-- **Nunca sai da máquina sem dizer.** Apenas `gtr pr` e `gtr doctor --online`
-  fazem requisição de rede, e ambos declaram isso no `--help`. O `doctor` sem a
-  flag, e todo o resto, é local — é isso que o torna barato de rodar por
-  curiosidade.
+- **Nunca sai da máquina sem dizer.** `gtr pr`, `gtr doctor --online`,
+  `gtr riff` e `gtr fire` fazem requisição de rede, e os quatro declaram isso
+  no `--help`. Os dois primeiros falam com o GitHub através do `gh`; os dois
+  últimos falam HTTP puro com uma API pública, sem chave e sem token. O
+  `doctor` sem a flag, e todo o resto, é local — é isso que o torna barato de
+  rodar por curiosidade.
 - **Nunca instala nada.** O `gtr setup` imprime o comando de instalação da sua
   máquina; quem executa é você. Um binário que pede senha de root para agir
   sozinho é um hábito que não vale ensinar.
