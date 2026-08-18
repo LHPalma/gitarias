@@ -28,6 +28,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, client web.Client, find
 	command.AddCommand(newCommitsCommand(runner, commands))
 	command.AddCommand(newDoctorCommand(runner, commands))
 	command.AddCommand(newFavoriteBandCommand())
+	command.AddCommand(newFireCommand(runner, client))
 	command.AddCommand(newIgnoreCommand(runner))
 	command.AddCommand(newLicensesCommand(notices))
 	command.AddCommand(newPullRequestCommand(runner, commands))
