@@ -186,7 +186,7 @@ func TestChurnNeverEndsALineWithSpace(t *testing.T) {
 }
 
 func TestChurnPropagatesWriteFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(churned()), noCommands(), noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(churned()), noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"churn"})

@@ -30,7 +30,7 @@ func setup(t *testing.T, finder platform.Finder, outcomes []exectest.Response, a
 	runner := gittest.NewRunner(healthyRepository())
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
-	command := NewRootCommand(runner, exectest.NewRunner(outcomes...), finder, noNotices)
+	command := NewRootCommand(runner, exectest.NewRunner(outcomes...), noWeb(), finder, noNotices)
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.SetArgs(args)
@@ -83,7 +83,7 @@ func TestSetupNeverExecutesAnything(t *testing.T) {
 	runner := gittest.NewRunner(healthyRepository())
 	commands := exectest.NewRunner(missingBoth()...)
 
-	command := NewRootCommand(runner, commands, onUbuntu(), noNotices)
+	command := NewRootCommand(runner, commands, noWeb(), onUbuntu(), noNotices)
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"setup"})
@@ -125,7 +125,7 @@ func TestSetupUsesTheDiagnosisHintForWhatIsNotAnInstall(t *testing.T) {
 	runner := gittest.NewRunner(responses)
 	stdout := &bytes.Buffer{}
 
-	command := NewRootCommand(runner, exectest.NewRunner(gitFound()...), onUbuntu(), noNotices)
+	command := NewRootCommand(runner, exectest.NewRunner(gitFound()...), noWeb(), onUbuntu(), noNotices)
 	command.SetOut(stdout)
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"setup"})
@@ -158,7 +158,7 @@ func TestSetupSkipsWhatIsOnlyInapplicable(t *testing.T) {
 	runner := gittest.NewRunner(map[string]gittest.Response{})
 	stdout := &bytes.Buffer{}
 
-	command := NewRootCommand(runner, exectest.NewRunner(gitFound()...), onUbuntu(), noNotices)
+	command := NewRootCommand(runner, exectest.NewRunner(gitFound()...), noWeb(), onUbuntu(), noNotices)
 	command.SetOut(stdout)
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"setup"})

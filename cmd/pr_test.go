@@ -126,7 +126,7 @@ func TestPullRequestListRespectsTheLimit(t *testing.T) {
 	responses := map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Output: "true"}}
 	commands := exectest.NewRunner(answered(listedPullRequests)...)
 
-	command := NewRootCommand(gittest.NewRunner(responses), commands, noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(responses), commands, noWeb(), noFinder(), noNotices)
 	command.SetOut(&strings.Builder{})
 	command.SetErr(&strings.Builder{})
 	command.SetArgs([]string{"pr", "list", "--limit", "5"})

@@ -183,7 +183,7 @@ func TestShortShowsTheSevenCharactersGitWouldShow(t *testing.T) {
 func undoWith(t *testing.T, output io.Writer, input io.Reader) error {
 	t.Helper()
 
-	command := NewRootCommand(gittest.NewRunner(journalled(t, twoDeleted)), exectest.NewRunner(), noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(journalled(t, twoDeleted)), exectest.NewRunner(), noWeb(), noFinder(), noNotices)
 	command.SetOut(output)
 	command.SetErr(&bytes.Buffer{})
 	command.SetIn(input)

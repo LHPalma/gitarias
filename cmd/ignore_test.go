@@ -291,7 +291,7 @@ func TestIgnoreListCommandNeverEndsALineWithSpace(t *testing.T) {
 }
 
 func TestIgnoreListCommandPropagatesWriteFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(populated()), noCommands(), noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(populated()), noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"ignore", "list"})
@@ -697,7 +697,7 @@ func TestIgnoreListCommandRefusesNoHeaderOutsideTheDelimitedFormats(t *testing.T
 func ignoreListCommand(t *testing.T, responses map[string]gittest.Response) *cobra.Command {
 	t.Helper()
 
-	root := NewRootCommand(gittest.NewRunner(responses), noCommands(), noFinder(), noNotices)
+	root := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
 
 	command, _, err := root.Find([]string{"ignore", "list"})
 	if err != nil {

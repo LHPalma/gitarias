@@ -197,7 +197,7 @@ func TestAuthorResetPropagatesThePlanFailure(t *testing.T) {
 }
 
 func TestAuthorResetPropagatesTheReadFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(authorReset()), noCommands(), noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(authorReset()), noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetIn(brokenReader{})
@@ -470,7 +470,7 @@ func TestAuthorNeverConfirmsWithoutAPlan(t *testing.T) {
 }
 
 func TestAuthorPropagatesTheReadFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(authored()), noCommands(), noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(authored()), noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetIn(brokenReader{})

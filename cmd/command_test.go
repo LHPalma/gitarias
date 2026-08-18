@@ -10,6 +10,8 @@ import (
 	"github.com/LHPalma/gitarias/internal/git/gittest"
 	"github.com/LHPalma/gitarias/internal/platform"
 	"github.com/LHPalma/gitarias/internal/platform/platformtest"
+	"github.com/LHPalma/gitarias/internal/web"
+	"github.com/LHPalma/gitarias/internal/web/webtest"
 )
 
 var errNotARepository = errors.New("fatal: not a git repository")
@@ -18,6 +20,10 @@ const noNotices = "resumo\n" + noticesSeparator + "texto completo\n"
 
 func noCommands() *exectest.Runner {
 	return exectest.NewRunner()
+}
+
+func noWeb() web.Client {
+	return webtest.NewClient()
 }
 
 func deletesABranch(call string) bool {
@@ -37,7 +43,7 @@ func execute(t *testing.T, responses map[string]gittest.Response, answer string,
 	runner := gittest.NewRunner(responses)
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
-	command := NewRootCommand(runner, noCommands(), noFinder(), noNotices)
+	command := NewRootCommand(runner, noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.SetIn(strings.NewReader(answer))
@@ -275,7 +281,7 @@ func TestBranchesCommandPropagatesListingFailure(t *testing.T) {
 }
 
 func TestBranchesCommandPropagatesWriteFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")), noCommands(), noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")), noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"branches"})
@@ -286,7 +292,7 @@ func TestBranchesCommandPropagatesWriteFailure(t *testing.T) {
 }
 
 func TestBranchesCommandPropagatesReadFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")), noCommands(), noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(repository("main", "main\nfeat-a", "main\nfeat-a", "main")), noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetIn(brokenReader{})
@@ -499,7 +505,7 @@ func run(t *testing.T, responses map[string]gittest.Response, args ...string) (i
 
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
-	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.SetArgs(args)
@@ -537,7 +543,7 @@ func TestRunReturnsOneAndReportsWhenTheCommandFails(t *testing.T) {
 }
 
 func TestBranchesCommandPropagatesHeldSectionWriteFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(onlyHeldRepository()), noCommands(), noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(onlyHeldRepository()), noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"branches"})
@@ -561,7 +567,7 @@ func executeWith(t *testing.T, responses map[string]gittest.Response, outcomes [
 	runner := gittest.NewRunner(responses)
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
-	command := NewRootCommand(runner, exectest.NewRunner(outcomes...), noFinder(), noNotices)
+	command := NewRootCommand(runner, exectest.NewRunner(outcomes...), noWeb(), noFinder(), noNotices)
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.SetArgs(args)

@@ -147,7 +147,7 @@ func TestStatsCommandNeverEndsALineWithSpace(t *testing.T) {
 }
 
 func TestStatsCommandPropagatesWriteFailure(t *testing.T) {
-	command := NewRootCommand(gittest.NewRunner(threeAuthoredCommits()), noCommands(), noFinder(), noNotices)
+	command := NewRootCommand(gittest.NewRunner(threeAuthoredCommits()), noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"stats"})

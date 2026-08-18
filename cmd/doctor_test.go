@@ -27,7 +27,7 @@ func diagnosingIn(t *testing.T, responses map[string]gittest.Response, outcomes 
 	runner := gittest.NewRunner(responses)
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 
-	command := NewRootCommand(runner, exectest.NewRunner(outcomes...), noFinder(), noNotices)
+	command := NewRootCommand(runner, exectest.NewRunner(outcomes...), noWeb(), noFinder(), noNotices)
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.SetArgs(args)
