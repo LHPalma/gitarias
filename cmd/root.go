@@ -31,6 +31,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, client web.Client, find
 	command.AddCommand(newFireCommand(runner, client))
 	command.AddCommand(newIgnoreCommand(runner))
 	command.AddCommand(newLicensesCommand(notices))
+	command.AddCommand(newProfileCommand(runner))
 	command.AddCommand(newPullRequestCommand(runner, commands))
 	command.AddCommand(newRiffCommand(client))
 	command.AddCommand(newSetupCommand(runner, commands, finder))
