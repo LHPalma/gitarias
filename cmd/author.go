@@ -15,6 +15,7 @@ type authorOptions struct {
 	base   string
 	until  string
 	commit string
+	reset  string
 }
 
 func newAuthorCommand(runner Runner) *cobra.Command {
@@ -38,11 +39,20 @@ func newAuthorCommand(runner Runner) *cobra.Command {
 		"com --base, fecha o intervalo antes do HEAD; o que vem depois de <until> é preservado, só reencaixado em cima")
 	command.Flags().StringVar(&options.commit, "commit", "",
 		"reescreve só esse commit, preservando tudo antes e depois; incompatível com --base e --until. Não funciona no commit raiz, que não tem pai")
+	command.Flags().StringVar(&options.reset, "reset", "",
+		"wrapper de git reset --hard <sha>: descarta os commits depois de <sha> e qualquer mudança não commitada. Incompatível com --name, --email, --base, --until e --commit")
 
 	return command
 }
 
 func runAuthor(command *cobra.Command, repo *author.Repo, options authorOptions) error {
+	if options.reset != "" {
+		if options.name != "" || options.email != "" || options.base != "" || options.until != "" || options.commit != "" {
+			return fmt.Errorf("--reset não se combina com --name, --email, --base, --until nem --commit")
+		}
+		return runAuthorReset(command, repo, options.reset)
+	}
+
 	if options.name == "" || options.email == "" {
 		return fmt.Errorf("--name e --email são obrigatórios")
 	}
@@ -110,6 +120,45 @@ func runAuthor(command *cobra.Command, repo *author.Repo, options authorOptions)
 	}
 
 	if err := repo.Rewrite(ctx, base, until, options.name, options.email); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(output, "Pronto.")
+
+	return nil
+}
+
+func runAuthorReset(command *cobra.Command, repo *author.Repo, sha string) error {
+	ctx := command.Context()
+
+	if err := repo.Ensure(ctx); err != nil {
+		return err
+	}
+
+	plan, err := repo.PlanReset(ctx, sha)
+	if err != nil {
+		return err
+	}
+
+	output := command.OutOrStdout()
+
+	fmt.Fprintf(output, "Vai voltar para %s com git reset --hard, descartando %d %s que deixam de ser alcançáveis a partir daqui.\n",
+		sha, plan.Discarded, ui.Plural(plan.Discarded, "commit", "commits"))
+	if plan.Dirty {
+		fmt.Fprintln(output, "Há mudança não commitada em arquivo rastreado: será descartada sem deixar rastro nenhum, nem no reflog.")
+	}
+	fmt.Fprintf(output, "Recuperável com: git reset --hard %s\n", plan.Head)
+
+	confirmed, err := confirm(command.InOrStdin(), output, "Confirma? [y/N] ")
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		fmt.Fprintln(output, "Cancelado, nada foi resetado.")
+		return nil
+	}
+
+	if err := repo.Reset(ctx, sha); err != nil {
 		return err
 	}
 

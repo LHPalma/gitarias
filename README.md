@@ -458,6 +458,7 @@ Pronto.
 | `--base <ref>` | vazio | Reescreve `<ref>..HEAD` em vez de só o commit mais recente; `<ref>` fica de fora |
 | `--until <ref>` | vazio | Com `--base`, fecha o intervalo antes do `HEAD`; o que vem depois de `<ref>` é preservado |
 | `--commit <sha>` | vazio | Reescreve só esse commit, preservando tudo antes e depois; incompatível com `--base` e `--until` |
+| `--reset <sha>` | vazio | Wrapper de `git reset --hard <sha>`; descarta os commits depois de `<sha>` e qualquer mudança não commitada; incompatível com `--name`, `--email`, `--base`, `--until` e `--commit` |
 
 **É uma reescrita de história de verdade.** Sem `--base`, é um
 `commit --amend --reset-author` mais direto — só o SHA do topo muda. Com
@@ -523,6 +524,30 @@ crase interpolado ali seria injeção de shell pelo próprio dado que o comando
 existe para reatribuir. Medido contra um nome assim antes de decidir pela
 forma com variável de ambiente: com ela, o git trata o texto como identidade
 e nada executa.
+
+**`--reset <sha>` é um wrapper puro**, sem reescrita nenhuma por trás: é
+`git reset --hard <sha>` com a mesma prévia e a mesma confirmação do resto do
+comando, incompatível com `--name`, `--email`, `--base`, `--until` e
+`--commit`. A prévia conta quantos commits deixam de ser alcançáveis a partir
+da branch, e avisa separadamente se há mudança não commitada em arquivo
+rastreado — o `--hard` descarta as duas coisas, mas só os commits têm uma
+linha de recuperação:
+
+```
+$ gtr author --reset 91d918f
+Vai voltar para 91d918f com git reset --hard, descartando 2 commits que deixam de ser alcançáveis a partir daqui.
+Recuperável com: git reset --hard 7434de9
+Confirma? [y/N] y
+Pronto.
+```
+
+Se a árvore de trabalho tiver mudança não commitada em arquivo rastreado, a
+prévia ganha uma linha a mais antes da confirmação — essa mudança some sem
+deixar rastro nenhum, nem no reflog, e não tem como recuperar:
+
+```
+Há mudança não commitada em arquivo rastreado: será descartada sem deixar rastro nenhum, nem no reflog.
+```
 
 ### `gtr weight`
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/git/gittest"
 )
 
@@ -12,6 +13,8 @@ const (
 	lastAuthor  = "log -1 --format=%an <%ae>"
 	amend       = "commit --amend --no-edit --reset-author"
 	symbolicRef = "symbolic-ref --short HEAD"
+	dirtyCheck  = "diff HEAD --quiet"
+	hardReset   = "reset --hard deadbeef"
 )
 
 var errNotARepository = errors.New("fatal: not a git repository")
@@ -399,5 +402,101 @@ func TestEnsureAcceptsARepository(t *testing.T) {
 
 	if err := NewRepo(runner).Ensure(t.Context()); err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
+	}
+}
+
+func TestPlanResetForACleanTree(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead:                      {Output: "abc1234"},
+		rangeCount("deadbeef", "HEAD"): {Output: "3"},
+		dirtyCheck:                     {Output: ""},
+	})
+
+	plan, err := NewRepo(runner).PlanReset(t.Context(), "deadbeef")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	want := ResetPlan{Head: "abc1234", Discarded: 3, Dirty: false}
+	if plan != want {
+		t.Errorf("plano = %+v, queria %+v", plan, want)
+	}
+}
+
+func TestPlanResetForADirtyTree(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead:                      {Output: "abc1234"},
+		rangeCount("deadbeef", "HEAD"): {Output: "0"},
+		dirtyCheck:                     {Err: &git.ExitError{Code: 1, Message: ""}},
+	})
+
+	plan, err := NewRepo(runner).PlanReset(t.Context(), "deadbeef")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	if !plan.Dirty {
+		t.Error("dirty = false, o diff devolveu código 1, tinha de ser detectado como sujo")
+	}
+}
+
+func TestPlanResetPropagatesRevParseFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead: {Err: errNotARepository},
+	})
+
+	if _, err := NewRepo(runner).PlanReset(t.Context(), "deadbeef"); err == nil {
+		t.Fatal("falha do rev-parse tem de virar erro")
+	}
+}
+
+func TestPlanResetPropagatesRevListFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead:                      {Output: "abc1234"},
+		rangeCount("deadbeef", "HEAD"): {Err: errNotARepository},
+	})
+
+	if _, err := NewRepo(runner).PlanReset(t.Context(), "deadbeef"); err == nil {
+		t.Fatal("falha do rev-list tem de virar erro")
+	}
+}
+
+func TestPlanResetPropagatesADiffFailureThatIsNotADirtyTree(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead:                      {Output: "abc1234"},
+		rangeCount("deadbeef", "HEAD"): {Output: "0"},
+		dirtyCheck:                     {Err: errNotARepository},
+	})
+
+	if _, err := NewRepo(runner).PlanReset(t.Context(), "deadbeef"); err == nil {
+		t.Fatal("falha real do diff (não um código 1 de árvore suja) tem de virar erro")
+	}
+}
+
+func TestPlanResetPropagatesADiffFailureWithAnUnexpectedExitCode(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead:                      {Output: "abc1234"},
+		rangeCount("deadbeef", "HEAD"): {Output: "0"},
+		dirtyCheck:                     {Err: &git.ExitError{Code: 128, Message: "fatal: not a git repository"}},
+	})
+
+	if _, err := NewRepo(runner).PlanReset(t.Context(), "deadbeef"); err == nil {
+		t.Fatal("código de saída diferente de 1 não é árvore suja, tem de virar erro")
+	}
+}
+
+func TestReset(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{hardReset: {Output: ""}})
+
+	if err := NewRepo(runner).Reset(t.Context(), "deadbeef"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+}
+
+func TestResetPropagatesFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{hardReset: {Err: errNotARepository}})
+
+	if err := NewRepo(runner).Reset(t.Context(), "deadbeef"); err == nil {
+		t.Fatal("falha do reset --hard tem de virar erro")
 	}
 }

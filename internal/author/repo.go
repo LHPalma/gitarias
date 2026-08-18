@@ -2,6 +2,7 @@ package author
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -167,5 +168,40 @@ func (repo *Repo) Rewrite(ctx context.Context, base string, until string, name s
 
 	_, err = repo.runner.Run(ctx, "rebase", "--onto", newUntilSHA, untilSHA, ref)
 
+	return err
+}
+
+// PlanReset devolve o que Reset afetaria, sem afetar nada: o HEAD atual
+// (para recuperação), quantos commits deixam de estar alcançáveis a partir
+// da branch, e se há mudança não commitada em arquivo rastreado — essas
+// mudanças o --hard descarta sem deixar rastro.
+func (repo *Repo) PlanReset(ctx context.Context, sha string) (ResetPlan, error) {
+	head, err := repo.runner.Run(ctx, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return ResetPlan{}, err
+	}
+
+	discarded, err := repo.countRange(ctx, sha, "HEAD")
+	if err != nil {
+		return ResetPlan{}, err
+	}
+
+	dirty := false
+	if _, err := repo.runner.Run(ctx, "diff", "HEAD", "--quiet"); err != nil {
+		var exitError *git.ExitError
+		if !errors.As(err, &exitError) || exitError.Code != 1 {
+			return ResetPlan{}, err
+		}
+		dirty = true
+	}
+
+	return ResetPlan{Head: head, Discarded: discarded, Dirty: dirty}, nil
+}
+
+// Reset move a branch para sha com git reset --hard, descartando tanto os
+// commits que ficam pra trás quanto qualquer mudança não commitada em
+// arquivo rastreado.
+func (repo *Repo) Reset(ctx context.Context, sha string) error {
+	_, err := repo.runner.Run(ctx, "reset", "--hard", sha)
 	return err
 }

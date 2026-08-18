@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/git/gittest"
 )
 
@@ -13,6 +14,8 @@ const (
 	authorLastAuthor = "log -1 --format=%an <%ae>"
 	authorAmend      = "commit --amend --no-edit --reset-author"
 	authorSymbolic   = "symbolic-ref --short HEAD"
+	authorDirtyCheck = "diff HEAD --quiet"
+	authorHardReset  = "reset --hard deadbeef"
 )
 
 func authorRangeCount(from string, to string) string {
@@ -71,6 +74,148 @@ func authoredCommit() map[string]gittest.Response {
 		authorRebaseExec("deadbeef^", "untilsha"):              {Output: ""},
 		"rev-parse HEAD":                                       {Output: "newuntilsha"},
 		authorRebaseOnto("newuntilsha", "untilsha", "feature"): {Output: ""},
+	}
+}
+
+// authorReset monta um repositório com árvore limpa, onde --reset deadbeef
+// descartaria 3 commits e nenhuma mudança não commitada.
+func authorReset() map[string]gittest.Response {
+	return map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree":    {Output: "true"},
+		authorShortHead:                      {Output: "abc1234"},
+		authorRangeCount("deadbeef", "HEAD"): {Output: "3"},
+		authorDirtyCheck:                     {Output: ""},
+		authorHardReset:                      {Output: ""},
+	}
+}
+
+func TestAuthorReset(t *testing.T) {
+	result := execute(t, authorReset(), "y\n", "author", "--reset", "deadbeef")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "descartando 3 commits") {
+		t.Errorf("saída = %q, queria a contagem de commits descartados", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "git reset --hard abc1234") {
+		t.Errorf("saída = %q, queria a instrução de recuperação", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "Pronto.") {
+		t.Errorf("saída = %q, queria a confirmação de que resetou", result.stdout)
+	}
+
+	var reset bool
+	for _, call := range result.calls {
+		if call == authorHardReset {
+			reset = true
+		}
+	}
+	if !reset {
+		t.Errorf("chamadas = %v, o reset --hard tinha de ter rodado", result.calls)
+	}
+}
+
+func TestAuthorResetWarnsAboutADirtyTree(t *testing.T) {
+	responses := authorReset()
+	responses[authorDirtyCheck] = gittest.Response{Err: &git.ExitError{Code: 1, Message: ""}}
+
+	result := execute(t, responses, "y\n", "author", "--reset", "deadbeef")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "sem deixar rastro nenhum") {
+		t.Errorf("saída = %q, queria o aviso de árvore suja", result.stdout)
+	}
+}
+
+func TestAuthorResetCancelledWithoutConfirmation(t *testing.T) {
+	result := execute(t, authorReset(), "\n", "author", "--reset", "deadbeef")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "Cancelado, nada foi resetado.") {
+		t.Errorf("saída = %q, queria a mensagem de cancelamento", result.stdout)
+	}
+
+	for _, call := range result.calls {
+		if call == authorHardReset {
+			t.Fatalf("sem confirmar não pode resetar, mas rodou %q", call)
+		}
+	}
+}
+
+func TestAuthorResetRefusesToCombineWithRewriteFlags(t *testing.T) {
+	tests := [][]string{
+		{"author", "--reset", "deadbeef", "--name", "Fake Name"},
+		{"author", "--reset", "deadbeef", "--email", "fake@fake.com"},
+		{"author", "--reset", "deadbeef", "--base", "main"},
+		{"author", "--reset", "deadbeef", "--until", "main"},
+		{"author", "--reset", "deadbeef", "--commit", "cafe"},
+	}
+
+	for _, args := range tests {
+		result := execute(t, authorReset(), "", args...)
+
+		if result.err == nil {
+			t.Errorf("%v: --reset combinado com uma flag de reescrita tem de ser recusado", args)
+		}
+		if len(result.calls) != 0 {
+			t.Errorf("%v: chamadas = %v, a validação vem antes de tocar no git", args, result.calls)
+		}
+	}
+}
+
+func TestAuthorResetOutsideRepository(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Err: errNotARepository},
+	}
+
+	result := execute(t, responses, "", "author", "--reset", "deadbeef")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+}
+
+func TestAuthorResetPropagatesThePlanFailure(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		authorShortHead:                   {Err: errNotARepository},
+	}
+
+	result := execute(t, responses, "y\n", "author", "--reset", "deadbeef")
+
+	if result.err == nil {
+		t.Fatal("falha ao planejar tem de virar erro antes de perguntar qualquer coisa")
+	}
+	if strings.Contains(result.stdout, "Confirma?") {
+		t.Errorf("saída = %q, não pode perguntar sem saber o que vai resetar", result.stdout)
+	}
+}
+
+func TestAuthorResetPropagatesTheReadFailure(t *testing.T) {
+	command := NewRootCommand(gittest.NewRunner(authorReset()), noCommands(), noFinder(), noNotices)
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetIn(brokenReader{})
+	command.SetArgs([]string{"author", "--reset", "deadbeef"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha na leitura da confirmação tem de virar erro")
+	}
+}
+
+func TestAuthorResetPropagatesTheResetFailure(t *testing.T) {
+	responses := authorReset()
+	responses[authorHardReset] = gittest.Response{Err: errNotARepository}
+
+	result := execute(t, responses, "y\n", "author", "--reset", "deadbeef")
+
+	if result.err == nil {
+		t.Fatal("falha do reset --hard tem de virar erro")
 	}
 }
 
