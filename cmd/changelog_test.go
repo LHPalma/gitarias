@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -292,6 +294,35 @@ func TestChangelogPropagatesWriteFailure(t *testing.T) {
 
 	if command.Execute() == nil {
 		t.Fatal("falha de escrita tem de virar erro")
+	}
+}
+
+func TestChangelogOutputDefaultsToMarkdown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "CHANGELOG")
+
+	result := execute(t, logged("feat: algo"), "", "changelog", "--output", path)
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if _, err := os.Stat(path + ".md"); err != nil {
+		t.Errorf("--output sem extensão, e --format text por padrão, tem de gerar %s.md: %v", path, err)
+	}
+	if _, err := os.Stat(path + ".txt"); err == nil {
+		t.Errorf("o --help promete CHANGELOG.md, não %s.txt", path)
+	}
+}
+
+func TestChangelogOutputKeepsCSVExtension(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "CHANGELOG")
+
+	result := execute(t, logged("feat: algo"), "", "changelog", "--format", "csv", "--output", path)
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if _, err := os.Stat(path + ".csv"); err != nil {
+		t.Errorf("--format csv continua gerando .csv, não .md: %v", err)
 	}
 }
 

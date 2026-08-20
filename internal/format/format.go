@@ -38,20 +38,28 @@ func (chosen Format) Extension() string {
 }
 
 func (chosen Format) Path(path string, name string) (string, error) {
+	return chosen.PathWithExtension(path, name, chosen.Extension())
+}
+
+// PathWithExtension é o Path de sempre, mas com a extensão escolhida pelo
+// chamador em vez da default do formato — para o caso raro de um comando
+// cujo --format text não produz texto plano, e sim um formato próprio (ver
+// changelogTable, cuja saída é Markdown de verdade).
+func (chosen Format) PathWithExtension(path string, name string, extension string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("informe o caminho do arquivo a gravar")
 	}
 
 	if os.IsPathSeparator(path[len(path)-1]) {
 		return "", fmt.Errorf("%q nomeia um diretório; informe o caminho do arquivo, como %q",
-			path, path+name+chosen.Extension())
+			path, path+name+extension)
 	}
 
 	if filepath.Ext(path) != "" {
 		return path, nil
 	}
 
-	return path + chosen.Extension(), nil
+	return path + extension, nil
 }
 
 func (chosen Format) Delimited() bool {

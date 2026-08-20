@@ -13,6 +13,13 @@ type changelogTable struct {
 	entries []changelog.Entry
 }
 
+// textExtension: o --format text do changelog é Markdown de verdade, não
+// texto de tela — --output sem extensão deve gerar CHANGELOG.md, como o
+// --help do comando promete, não CHANGELOG.txt.
+func (data changelogTable) textExtension() string {
+	return ".md"
+}
+
 func (data changelogTable) header() []string {
 	return []string{"hash", "tipo", "escopo", "breaking", "assunto"}
 }

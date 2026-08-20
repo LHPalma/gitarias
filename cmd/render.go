@@ -11,12 +11,29 @@ func emit(output io.Writer, path string, name string, chosen rendering, data tab
 		return render(output, chosen, data)
 	}
 
-	destination, err := chosen.format.Path(path, name)
+	destination, err := chosen.format.PathWithExtension(path, name, textExtension(chosen.format, data))
 	if err != nil {
 		return err
 	}
 
 	return renderToFile(destination, chosen, data)
+}
+
+// textExtension é a extensão do formato escolhido, a não ser que a tabela
+// seja uma ownTextExtension — hoje só o changelog, cujo --format text é
+// Markdown de verdade, não texto de tela para humano ler no terminal.
+func textExtension(chosen format.Format, data table) string {
+	if chosen == format.Text {
+		if custom, ok := data.(ownTextExtension); ok {
+			return custom.textExtension()
+		}
+	}
+
+	return chosen.Extension()
+}
+
+type ownTextExtension interface {
+	textExtension() string
 }
 
 func render(output io.Writer, chosen rendering, data table) error {
