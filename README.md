@@ -978,6 +978,48 @@ erro: "relatorios/" nomeia um diretório; informe o caminho do arquivo, como "re
 primeiro campo e sujariam quem for parsear. Para abrir no Excel em português,
 `--separator ';'` costuma ser o par que falta.
 
+### `gtr ai-trailers list`
+
+Lista os commits do histórico do `HEAD` atual que carregam trailer de autoria
+de IA reconhecido — `Co-Authored-By` apontando pra uma ferramenta conhecida,
+ou `Claude-Session`. Alias `synth`.
+
+```
+$ gtr ai-trailers list
+Commits com trailer de autoria de IA (2):
+  HASH     FERRAMENTA      ASSUNTO
+  6d6085c  GitHub Copilot  feat: copilot commit
+  e4c610a  Claude Code     feat: something with AI help
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
+| `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
+| `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
+| `--no-header` | `false` | Só com `csv` ou `tsv`. Omite a linha de nomes das colunas |
+
+**Só o que já foi visto na prática entra na lista de assinaturas** — Claude
+Code (`Co-Authored-By` com `noreply@anthropic.com`, ou o trailer
+`Claude-Session`) e GitHub Copilot (`Co-authored-by` com a conta bot
+`Copilot`). Não é exaustiva, e cresce por medição, não por suposição.
+
+**`Co-Authored-By` de gente de verdade nunca entra**, inclusive quando usa o
+e-mail `@users.noreply.github.com` do próprio GitHub — esse domínio sozinho
+não basta, é comum entre humanos que escondem o e-mail; só conta quando o
+nome bate com um bot conhecido, como `Copilot`.
+
+**Rodapé de prosa não é trailer.** O "🤖 Generated with Claude Code" que
+ferramentas de IA costumam deixar no fim da mensagem não é um trailer
+`Chave: valor` — é texto solto, e o `git interpret-trailers` (o que o `gtr`
+usa por baixo, via `%(trailers)`) já não o reconhece como tal. Só o que seria
+mesmo cortado por essa ferramenta do próprio git conta como achado aqui.
+
+**Só lista, por enquanto.** Remover o trailer é destrutivo — reescreve
+mensagem de commit — e cai sob a mesma disciplina da **ADR-008** que o `gtr
+author` já segue: prova de recuperação, autorização explícita, confirmação
+proporcional ao alcance. Fica para uma etapa seguinte.
+
 ## O que a ferramenta nunca faz
 
 Estas não são configurações — são propriedades do código:
