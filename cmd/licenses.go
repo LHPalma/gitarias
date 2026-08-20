@@ -29,6 +29,12 @@ func newLicensesCommand(notices string) *cobra.Command {
 }
 
 func notice(notices string, full bool) string {
+	// go:embed lê o arquivo como o disco entregou; num checkout Windows com
+	// core.autocrlf=true — a config recomendada pelo próprio instalador do
+	// Git —, isso é CRLF, e o noticesSeparator abaixo, só LF, nunca casava:
+	// --full virava no-op silencioso, sempre o texto inteiro.
+	notices = strings.ReplaceAll(notices, "\r\n", "\n")
+
 	if full {
 		return notices
 	}

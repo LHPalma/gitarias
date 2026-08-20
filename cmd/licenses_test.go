@@ -47,6 +47,19 @@ func TestNoticeWithoutASeparator(t *testing.T) {
 	}
 }
 
+func TestNoticeCutsTheSeparatorEvenOnCRLF(t *testing.T) {
+	crlf := strings.ReplaceAll(noNotices, "\n", "\r\n")
+
+	got := notice(crlf, false)
+
+	if strings.Contains(got, "texto completo") {
+		t.Errorf("resumo = %q, um checkout Windows com core.autocrlf grava CRLF no arquivo embutido; o separador tem de casar mesmo assim", got)
+	}
+	if !strings.Contains(got, "resumo") {
+		t.Errorf("resumo = %q, o texto antes do separador continua saindo", got)
+	}
+}
+
 func TestLicensesCommandNeverEndsALineWithSpace(t *testing.T) {
 	result := execute(t, nil, "", "licenses", "--full")
 
