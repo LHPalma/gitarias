@@ -38,6 +38,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, client web.Client, find
 	command.AddCommand(newSetupCommand(runner, commands, finder))
 	command.AddCommand(newStatsCommand(runner))
 	command.AddCommand(newAITrailersCommand(runner))
+	command.AddCommand(newAITrailersStripStepCommand(runner))
 	command.AddCommand(newUndoCommand(runner))
 	command.AddCommand(newWeightCommand(runner))
 	command.AddCommand(newWorktreesCommand(runner))
