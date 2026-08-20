@@ -24,6 +24,15 @@ func profileToday() string {
 	return time.Now().Format("2006-01-02")
 }
 
+// profileYesterday existe só para TestProfileUntilAloneStartsAtToday: um
+// --until que nunca pode coincidir com "hoje", ao contrário de uma data
+// futura cravada, que vira exatamente esse dia mais cedo ou mais tarde. É a
+// mesma classe de bug que --since == --until com data nua já tinha
+// cobrado uma vez, agora do lado do teste em vez do código.
+func profileYesterday() string {
+	return time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+}
+
 func profiled() map[string]gittest.Response {
 	return map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},
@@ -94,14 +103,14 @@ func TestProfileSinceAloneGoesUntilToday(t *testing.T) {
 func TestProfileUntilAloneStartsAtToday(t *testing.T) {
 	responses := profiled()
 	responses["rev-parse --verify --quiet HEAD"] = gittest.Response{Output: "abc123"}
-	responses[profileCountCall("real@real.com", profileToday(), "2026-08-20")] = gittest.Response{Output: "0"}
+	responses[profileCountCall("real@real.com", profileToday(), profileYesterday())] = gittest.Response{Output: "0"}
 
-	result := execute(t, responses, "", "profile", "--commit-count", "--until", "2026-08-20")
+	result := execute(t, responses, "", "profile", "--commit-count", "--until", profileYesterday())
 
 	if result.err != nil {
 		t.Fatalf("não esperava erro, veio %v", result.err)
 	}
-	if !strings.Contains(result.stdout, "entre "+profileToday()+" e 2026-08-20") {
+	if !strings.Contains(result.stdout, "entre "+profileToday()+" e "+profileYesterday()) {
 		t.Errorf("saída = %q, queria hoje como início", result.stdout)
 	}
 }
