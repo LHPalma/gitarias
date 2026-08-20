@@ -147,6 +147,73 @@ func TestChangelogTypeIsATokenInJSON(t *testing.T) {
 	}
 }
 
+func TestChangelogFiltersBySince(t *testing.T) {
+	responses := logged("feat: algo")
+	responses[changelogLog+" --since=2026-08-10 00:00:00"] = responses[changelogLog]
+	delete(responses, changelogLog)
+
+	result := execute(t, responses, "", "changelog", "--since", "2026-08-10")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "### Features") {
+		t.Errorf("saída = %q, a flag tem de repassar o since ao git log", result.stdout)
+	}
+}
+
+func TestChangelogFiltersByUntil(t *testing.T) {
+	responses := logged("feat: algo")
+	responses[changelogLog+" --until=2026-08-10 23:59:59"] = responses[changelogLog]
+	delete(responses, changelogLog)
+
+	result := execute(t, responses, "", "changelog", "--until", "2026-08-10")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "### Features") {
+		t.Errorf("saída = %q, a flag tem de repassar o until ao git log", result.stdout)
+	}
+}
+
+func TestChangelogFiltersBySinceAndUntil(t *testing.T) {
+	responses := logged("feat: algo")
+	responses[changelogLog+" --since=2026-08-01 00:00:00 --until=2026-08-10 23:59:59"] = responses[changelogLog]
+	delete(responses, changelogLog)
+
+	result := execute(t, responses, "", "changelog", "--since", "2026-08-01", "--until", "2026-08-10")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "### Features") {
+		t.Errorf("saída = %q, as duas flags têm de chegar juntas ao git log", result.stdout)
+	}
+}
+
+func TestChangelogRefusesInvalidSince(t *testing.T) {
+	result := execute(t, logged("feat: algo"), "", "changelog", "--since", "10-08-2026")
+
+	if result.err == nil {
+		t.Fatal("--since fora de AAAA-MM-DD tem de virar erro")
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a validação da data vem antes de tocar no git", result.calls)
+	}
+}
+
+func TestChangelogRefusesInvalidUntil(t *testing.T) {
+	result := execute(t, logged("feat: algo"), "", "changelog", "--until", "não é data")
+
+	if result.err == nil {
+		t.Fatal("--until fora de AAAA-MM-DD tem de virar erro")
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a validação da data vem antes de tocar no git", result.calls)
+	}
+}
+
 func TestChangelogOutsideRepository(t *testing.T) {
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Err: errNotARepository},
