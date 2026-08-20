@@ -1065,6 +1065,48 @@ continuam exatamente como estavam.
 cada commit do período — precisa estar no `PATH` sob esse nome, mesma
 exigência que o `gh` já tem para `pr` e `doctor --online`.
 
+### `gtr blame-ai`
+
+O oposto do `strip`: em vez de tirar o crédito de IA, bota. Acrescenta um
+`Co-Authored-By` de uma ferramenta reconhecida a um commit, com confirmação —
+o mesmo trailer que a própria ferramenta deixaria se tivesse ajudado de
+verdade, e que o `gtr ai-trailers list` já reconhece de volta.
+
+```
+$ gtr blame-ai --tool claude
+Vai acrescentar "Co-Authored-By: Claude <noreply@anthropic.com>" ao commit 8a87d99 (feat: segundo commit).
+Recuperável com: git reset --hard 8a87d99
+Confirma? [y/N] y
+Pronto.
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--commit <sha>` | vazio | O commit a marcar; sem ela, o mais recente. Não funciona no commit raiz, que não tem pai |
+| `--tool <nome>` | — | `claude` ou `copilot` — obrigatória |
+
+**O autor de verdade não muda.** Isso é diferente de `gtr author`, que
+reatribui autoria e committer por inteiro — aqui só entra um trailer a mais
+na mensagem, ao lado de quem quer que já estivesse lá.
+
+**Sem `--commit`, mexe no HEAD** com um `git commit --amend` só. **Com ela**,
+usa a mesma dança de reencaixe do `strip` — só que, ao contrário de lá, o
+trailer a acrescentar é sempre o mesmo do início ao fim da chamada, então
+não precisa de um subcomando oculto: o `--exec` da rebase é um pipeline fixo
+de `git` puro (`log`, `interpret-trailers`, `commit --amend`), sem nada do
+que foi digitado entrando nele — só as duas assinaturas fixas de
+`--tool`, nunca texto do chamador.
+
+**Quem monta o trailer é o próprio `git interpret-trailers`**, não uma
+reimplementação à mão: ele já sabe abrir um parágrafo novo quando o commit
+não tem nenhum trailer ainda, entrar no bloco existente quando já tem, e não
+duplicar se rodado duas vezes. Achado testando contra o git de verdade: a
+saída do `git log` que o `gtr` lê perde a quebra de linha final ao ser
+aparada, e sem repô-la antes de mandar pro `interpret-trailers`, um commit
+de assunto só (sem corpo) saía com o trailer grudado na primeira linha, sem
+o parágrafo em branco que o git exige para reconhecer aquilo como trailer
+depois — corrigido, e testado com exatamente esse caso.
+
 ## O que a ferramenta nunca faz
 
 Estas não são configurações — são propriedades do código:
