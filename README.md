@@ -1015,10 +1015,55 @@ ferramentas de IA costumam deixar no fim da mensagem não é um trailer
 usa por baixo, via `%(trailers)`) já não o reconhece como tal. Só o que seria
 mesmo cortado por essa ferramenta do próprio git conta como achado aqui.
 
-**Só lista, por enquanto.** Remover o trailer é destrutivo — reescreve
-mensagem de commit — e cai sob a mesma disciplina da **ADR-008** que o `gtr
-author` já segue: prova de recuperação, autorização explícita, confirmação
-proporcional ao alcance. Fica para uma etapa seguinte.
+**Aceita `--since`/`--until`, no mesmo padrão do `changelog`.** Sem nenhuma
+das duas, é o histórico inteiro; com qualquer uma, filtra o período. Formato
+`AAAA-MM-DD`, cada limite virando meia-noite ou 23:59:59 explícita antes de
+chegar ao git.
+
+### `gtr ai-trailers strip`
+
+Remove os trailers de autoria de IA reconhecidos, com confirmação. Cai sob a
+mesma disciplina da **ADR-008** que o `gtr author` já segue: prova de
+recuperação, autorização explícita, confirmação mostrando exatamente o que
+vai mudar antes de perguntar — o preview é o mesmo que o `list` já mostra,
+restrito ao mesmo período.
+
+```
+$ gtr ai-trailers strip
+Commits com trailer de autoria de IA (1):
+  HASH     FERRAMENTA   ASSUNTO
+  cef3b58  Claude Code  feat: something with AI help
+Recuperável com: git reset --hard cef3b58
+Confirma? [y/N] y
+Pronto.
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--since <data>` | vazio | Início do período, `AAAA-MM-DD`; sem ela, só o HEAD conta |
+| `--until <data>` | vazio | Fim do período, `AAAA-MM-DD`; sem ela, sem limite superior |
+
+**Sem `--since` nem `--until`, mexe só no commit mais recente** — um `git
+commit --amend` só. **Com qualquer um dos dois**, reescreve a cadeia inteira
+do período com uma rebase, mesmo os commits que não tinham trailer de IA
+nenhum: alcançar os que batem exige percorrer os que estão no meio.
+
+**Todo commit dali pra frente ganha hash novo, e o que vem depois do período
+também** — mesmo sem ter a mensagem tocada. Hash de commit inclui o hash do
+pai; reescrever um pai cascateia adiante, sempre. Medido contra o git de
+verdade: um commit fora do período de propósito ficou **byte a byte
+intocado**, hash incluso — porque a rebase nunca chega até ele —, enquanto o
+que vinha *depois* do período, com mensagem idêntica, saiu com hash
+diferente mesmo assim. **Preservado é conteúdo, nunca é identidade.**
+
+**Trailer humano ao lado de um de IA nunca é tocado.** Um commit com
+`Co-Authored-By` de pessoa de verdade e de Claude junto sai só com o de
+Claude removido — a mensagem, o resto dos trailers e a árvore do commit
+continuam exatamente como estavam.
+
+**Quem reescreve passo a passo é o próprio `gtr`**, invocado pela rebase a
+cada commit do período — precisa estar no `PATH` sob esse nome, mesma
+exigência que o `gh` já tem para `pr` e `doctor --online`.
 
 ## O que a ferramenta nunca faz
 
