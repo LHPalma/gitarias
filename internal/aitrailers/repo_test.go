@@ -10,15 +10,25 @@ import (
 )
 
 const (
-	verifyHead  = "rev-parse --verify --quiet HEAD"
-	logFormat   = "log --format=%H%x00%s%x00%(trailers:only,unfold)%x01"
-	shortHead   = "rev-parse --short HEAD"
-	headLog     = "log -1 --format=%H%x00%s%x00%(trailers:only,unfold)"
-	stripLog    = "log -1 --format=%B%x00%(trailers:only)%x00%(trailers:only,unfold)"
-	amend       = "commit --amend --allow-empty -F -"
-	symbolicRef = "symbolic-ref --short HEAD"
-	windowLog   = "log --format=%H"
+	verifyHead        = "rev-parse --verify --quiet HEAD"
+	logFormat         = "log --format=%H%x00%s%x00%(trailers:only,unfold)%x01"
+	shortHead         = "rev-parse --short HEAD"
+	headLog           = "log -1 --format=%H%x00%s%x00%(trailers:only,unfold)"
+	stripLog          = "log -1 --format=%B%x00%(trailers:only)%x00%(trailers:only,unfold)"
+	amend             = "commit --amend --allow-empty -F -"
+	symbolicRef       = "symbolic-ref --short HEAD"
+	windowLog         = "log --format=%H"
+	blameHeadLog      = "log -1 --format=%B"
+	interpretTrailers = "interpret-trailers --trailer Co-Authored-By: Claude <noreply@anthropic.com>"
 )
+
+func blamePlanLog(target string) string {
+	return "log -1 --format=%h%x00%s " + target
+}
+
+func blameRebaseExec(sha string) string {
+	return "rebase " + sha + "^ " + sha + ` --exec git log -1 --format=%B | git interpret-trailers --trailer "Co-Authored-By: Claude <noreply@anthropic.com>" | git commit --amend --allow-empty -F -`
+}
 
 var errNotARepository = errors.New("fatal: not a git repository")
 
@@ -632,6 +642,297 @@ func TestPlanStripPropagatesHeadFindingFailure(t *testing.T) {
 
 	if _, err := NewRepo(runner).PlanStrip(t.Context(), "", ""); err == nil {
 		t.Fatal("falha ao checar o HEAD tem de virar erro")
+	}
+}
+
+func TestBlameHeadAddsTheTrailer(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		blameHeadLog:      {Output: "feat: algo\n\nbody\n"},
+		interpretTrailers: {Output: "feat: algo\n\nbody\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"},
+		amend:             {Output: ""},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "", "claude"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	if runner.Inputs[interpretTrailers] != "feat: algo\n\nbody\n" {
+		t.Errorf("mensagem enviada ao interpret-trailers = %q", runner.Inputs[interpretTrailers])
+	}
+	if runner.Inputs[amend] != "feat: algo\n\nbody\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n" {
+		t.Errorf("mensagem enviada ao amend = %q", runner.Inputs[amend])
+	}
+}
+
+// TestBlameHeadRestoresTheTrailingNewline prova a correção de um bug achado
+// rodando contra o git de verdade: o Run do gtr apara a saída do processo,
+// então um assunto sem corpo chega aqui sem a quebra final que %B sempre
+// tem na saída crua do git. Sem repor essa quebra, o interpret-trailers
+// gruda o trailer direto no assunto, sem linha em branco — e o próprio git
+// deixa de reconhecer aquilo como trailer depois.
+func TestBlameHeadRestoresTheTrailingNewline(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		blameHeadLog:      {Output: "feat: sem corpo"},
+		interpretTrailers: {Output: "feat: sem corpo\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"},
+		amend:             {Output: ""},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "", "claude"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	if runner.Inputs[interpretTrailers] != "feat: sem corpo\n" {
+		t.Errorf("mensagem enviada ao interpret-trailers = %q, tinha de terminar em \\n", runner.Inputs[interpretTrailers])
+	}
+}
+
+func TestBlameHeadTreatsEmptyAndHEADTheSame(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		blameHeadLog:      {Output: "feat: algo\n"},
+		interpretTrailers: {Output: "feat: algo\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"},
+		amend:             {Output: ""},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "HEAD", "claude"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if len(runner.Calls) == 0 {
+		t.Fatal("esperava chamadas, veio nenhuma")
+	}
+}
+
+func TestBlameRejectsAnUnknownTool(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{})
+
+	if err := NewRepo(runner).Blame(t.Context(), "", "chatgpt"); err == nil {
+		t.Fatal("ferramenta desconhecida tem de virar erro, antes de tocar no git")
+	}
+	if len(runner.Calls) != 0 {
+		t.Errorf("chamadas = %v, a validação da ferramenta vem antes de tocar no git", runner.Calls)
+	}
+}
+
+func TestBlameHeadPropagatesLogFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		blameHeadLog: {Err: errNotARepository},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "", "claude"); err == nil {
+		t.Fatal("falha do log tem de virar erro")
+	}
+}
+
+func TestBlameHeadPropagatesInterpretTrailersFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		blameHeadLog:      {Output: "feat: algo\n"},
+		interpretTrailers: {Err: errNotARepository},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "", "claude"); err == nil {
+		t.Fatal("falha do interpret-trailers tem de virar erro")
+	}
+}
+
+func TestBlameHeadPropagatesAmendFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		blameHeadLog:      {Output: "feat: algo\n"},
+		interpretTrailers: {Output: "feat: algo\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"},
+		amend:             {Err: errNotARepository},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "", "claude"); err == nil {
+		t.Fatal("falha do amend tem de virar erro")
+	}
+}
+
+func TestBlameASpecificCommitRebasesAndReattachesTheTail(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		symbolicRef:                 {Output: "feature"},
+		blameRebaseExec("deadbeef"): {Output: ""},
+		"rev-parse HEAD":            {Output: "deadbeef-rewritten"},
+		rebaseOnto("deadbeef-rewritten", "deadbeef", "feature"): {Output: ""},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "deadbeef", "claude"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	var reattached bool
+	for _, call := range runner.Calls {
+		if call == rebaseOnto("deadbeef-rewritten", "deadbeef", "feature") {
+			reattached = true
+		}
+	}
+	if !reattached {
+		t.Errorf("chamadas = %v, o reencaixe do rabo tinha de ter rodado", runner.Calls)
+	}
+}
+
+func TestBlameASpecificCommitFallsBackToTheHeadSHAWhenDetached(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		symbolicRef:                 {Err: errNotARepository},
+		"rev-parse HEAD":            {Output: "deadbeef-rewritten"},
+		blameRebaseExec("deadbeef"): {Output: ""},
+		rebaseOnto("deadbeef-rewritten", "deadbeef", "deadbeef-rewritten"): {Output: ""},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "deadbeef", "claude"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	var reattached bool
+	for _, call := range runner.Calls {
+		if call == rebaseOnto("deadbeef-rewritten", "deadbeef", "deadbeef-rewritten") {
+			reattached = true
+		}
+	}
+	if !reattached {
+		t.Errorf("chamadas = %v, com HEAD destacado o reencaixe tem de usar o SHA como referência", runner.Calls)
+	}
+}
+
+func TestBlameASpecificCommitNeverInterpolatesTheSHAIntoTheExecString(t *testing.T) {
+	dangerous := "$(touch /tmp/pwned)`id`"
+	call := blameRebaseExec(dangerous)
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		symbolicRef:                             {Output: "feature"},
+		call:                                    {Output: ""},
+		"rev-parse HEAD":                        {Output: "new"},
+		rebaseOnto("new", dangerous, "feature"): {Output: ""},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), dangerous, "claude"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	var found bool
+	for _, executed := range runner.Calls {
+		if executed == call {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("chamadas = %v, o --exec tem de ser sempre o mesmo literal fixo", runner.Calls)
+	}
+}
+
+func TestBlameASpecificCommitPropagatesTheRebaseFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		symbolicRef:                 {Output: "feature"},
+		blameRebaseExec("deadbeef"): {Err: errNotARepository},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "deadbeef", "claude"); err == nil {
+		t.Fatal("falha da rebase tem de virar erro")
+	}
+}
+
+func TestBlameASpecificCommitPropagatesTheNewestSHAFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		symbolicRef:                 {Output: "feature"},
+		blameRebaseExec("deadbeef"): {Output: ""},
+		"rev-parse HEAD":            {Err: errNotARepository},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "deadbeef", "claude"); err == nil {
+		t.Fatal("falha ao ler o novo SHA tem de virar erro")
+	}
+}
+
+func TestBlameASpecificCommitPropagatesTheReattachFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		symbolicRef:                              {Output: "feature"},
+		blameRebaseExec("deadbeef"):              {Output: ""},
+		"rev-parse HEAD":                         {Output: "new"},
+		rebaseOnto("new", "deadbeef", "feature"): {Err: errNotARepository},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "deadbeef", "claude"); err == nil {
+		t.Fatal("falha no reencaixe tem de virar erro")
+	}
+}
+
+func TestBlameASpecificCommitPropagatesTheDetachedHeadFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		symbolicRef:      {Err: errNotARepository},
+		"rev-parse HEAD": {Err: errNotARepository},
+	})
+
+	if err := NewRepo(runner).Blame(t.Context(), "deadbeef", "claude"); err == nil {
+		t.Fatal("falha nos dois jeitos de achar o ref tem de virar erro")
+	}
+}
+
+func TestPlanBlameOnTheHead(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead:            {Output: "abc123"},
+		blamePlanLog("HEAD"): {Output: "abc123" + fieldSep + "feat: algo"},
+	})
+
+	plan, err := NewRepo(runner).PlanBlame(t.Context(), "", "claude")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if plan.Head != "abc123" || plan.Target != "abc123" || plan.Subject != "feat: algo" || plan.Trailer.Tool != "Claude Code" {
+		t.Errorf("plan = %+v", plan)
+	}
+}
+
+func TestPlanBlameOnASpecificCommit(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead:                {Output: "abc123"},
+		blamePlanLog("deadbeef"): {Output: "dead123" + fieldSep + "feat: outro"},
+	})
+
+	plan, err := NewRepo(runner).PlanBlame(t.Context(), "deadbeef", "copilot")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if plan.Head != "abc123" || plan.Target != "dead123" || plan.Subject != "feat: outro" || plan.Trailer.Tool != "GitHub Copilot" {
+		t.Errorf("plan = %+v", plan)
+	}
+}
+
+func TestPlanBlameRejectsAnUnknownToolBeforeTouchingGit(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{})
+
+	if _, err := NewRepo(runner).PlanBlame(t.Context(), "", "chatgpt"); err == nil {
+		t.Fatal("ferramenta desconhecida tem de virar erro")
+	}
+	if len(runner.Calls) != 0 {
+		t.Errorf("chamadas = %v, a validação vem antes de tocar no git", runner.Calls)
+	}
+}
+
+func TestPlanBlamePropagatesShortHeadFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead: {Err: errNotARepository},
+	})
+
+	if _, err := NewRepo(runner).PlanBlame(t.Context(), "", "claude"); err == nil {
+		t.Fatal("falha do rev-parse --short tem de virar erro")
+	}
+}
+
+func TestPlanBlamePropagatesTargetLogFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead:            {Output: "abc123"},
+		blamePlanLog("HEAD"): {Err: errNotARepository},
+	})
+
+	if _, err := NewRepo(runner).PlanBlame(t.Context(), "", "claude"); err == nil {
+		t.Fatal("falha ao ler o commit alvo tem de virar erro")
+	}
+}
+
+func TestPlanBlamePropagatesAnIncompleteRecord(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		shortHead:            {Output: "abc123"},
+		blamePlanLog("HEAD"): {Output: "sem separador nenhum"},
+	})
+
+	if _, err := NewRepo(runner).PlanBlame(t.Context(), "", "claude"); err == nil {
+		t.Fatal("registro incompleto tem de virar erro")
 	}
 }
 

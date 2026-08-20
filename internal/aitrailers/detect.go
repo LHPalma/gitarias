@@ -7,6 +7,12 @@ import (
 
 var emailPattern = regexp.MustCompile(`<([^>]+)>`)
 
+// claudeEmail é o e-mail que o Claude Code deixa em Co-Authored-By — a
+// única constante que este arquivo e signature.go compartilham, para
+// detecção e fabricação nunca divergirem sobre o que "é" a assinatura do
+// Claude.
+const claudeEmail = "noreply@anthropic.com"
+
 // tool devolve a ferramenta por trás do trailer key: value, e se ele bate em
 // alguma assinatura conhecida. A lista é o que já foi visto na prática —
 // neste próprio repositório e no ecossistema — não é exaustiva, e cresce por
@@ -31,7 +37,7 @@ func coAuthorTool(value string) (string, bool) {
 	}
 
 	switch {
-	case email == "noreply@anthropic.com":
+	case email == claudeEmail:
 		return "Claude Code", true
 	case strings.Contains(strings.ToLower(value), "copilot") && strings.HasSuffix(email, "@users.noreply.github.com"):
 		return "GitHub Copilot", true
