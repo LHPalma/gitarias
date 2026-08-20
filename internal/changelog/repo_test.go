@@ -23,6 +23,18 @@ func withLog(output string) map[string]gittest.Response {
 	}
 }
 
+func logCall(since string, until string) string {
+	call := logFormat
+	if since != "" {
+		call += " --since=" + since + " 00:00:00"
+	}
+	if until != "" {
+		call += " --until=" + until + " 23:59:59"
+	}
+
+	return call
+}
+
 func TestEntriesParsesEachOfTheElevenTypes(t *testing.T) {
 	subjects := []struct {
 		subject string
@@ -46,7 +58,7 @@ func TestEntriesParsesEachOfTheElevenTypes(t *testing.T) {
 		lines = append(lines, strings.Repeat("a", index+1)+separator+item.subject)
 	}
 
-	entries, err := NewRepo(gittest.NewRunner(withLog(strings.Join(lines, "\n")))).Entries(t.Context())
+	entries, err := NewRepo(gittest.NewRunner(withLog(strings.Join(lines, "\n")))).Entries(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
@@ -63,7 +75,7 @@ func TestEntriesParsesEachOfTheElevenTypes(t *testing.T) {
 }
 
 func TestEntriesParsesScope(t *testing.T) {
-	entries, err := NewRepo(gittest.NewRunner(withLog("abc" + separator + "feat(cmd): novo comando"))).Entries(t.Context())
+	entries, err := NewRepo(gittest.NewRunner(withLog("abc"+separator+"feat(cmd): novo comando"))).Entries(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
@@ -79,7 +91,7 @@ func TestEntriesParsesScope(t *testing.T) {
 }
 
 func TestEntriesParsesBreakingChange(t *testing.T) {
-	entries, err := NewRepo(gittest.NewRunner(withLog("abc" + separator + "feat!: muda a api"))).Entries(t.Context())
+	entries, err := NewRepo(gittest.NewRunner(withLog("abc"+separator+"feat!: muda a api"))).Entries(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
@@ -90,7 +102,7 @@ func TestEntriesParsesBreakingChange(t *testing.T) {
 }
 
 func TestEntriesParsesBreakingChangeWithScope(t *testing.T) {
-	entries, err := NewRepo(gittest.NewRunner(withLog("abc" + separator + "feat(cmd)!: muda a api"))).Entries(t.Context())
+	entries, err := NewRepo(gittest.NewRunner(withLog("abc"+separator+"feat(cmd)!: muda a api"))).Entries(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
@@ -113,7 +125,7 @@ func TestEntriesFallsBackToMiscellaneous(t *testing.T) {
 		lines = append(lines, strings.Repeat("a", index+1)+separator+subject)
 	}
 
-	entries, err := NewRepo(gittest.NewRunner(withLog(strings.Join(lines, "\n")))).Entries(t.Context())
+	entries, err := NewRepo(gittest.NewRunner(withLog(strings.Join(lines, "\n")))).Entries(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
@@ -134,7 +146,7 @@ func TestEntriesFallsBackToMiscellaneous(t *testing.T) {
 
 func TestEntriesKeepsNewestFirst(t *testing.T) {
 	log := "b" + separator + "fix: segundo\n" + "a" + separator + "feat: primeiro"
-	entries, err := NewRepo(gittest.NewRunner(withLog(log))).Entries(t.Context())
+	entries, err := NewRepo(gittest.NewRunner(withLog(log))).Entries(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
@@ -147,7 +159,7 @@ func TestEntriesKeepsNewestFirst(t *testing.T) {
 func TestEntriesIgnoresMalformedLines(t *testing.T) {
 	runner := gittest.NewRunner(withLog("a" + separator + "feat: ok\nlinha sem separador"))
 
-	entries, err := NewRepo(runner).Entries(t.Context())
+	entries, err := NewRepo(runner).Entries(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
@@ -156,12 +168,57 @@ func TestEntriesIgnoresMalformedLines(t *testing.T) {
 	}
 }
 
+func TestEntriesFiltersSince(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		verifyHead:                {Output: "abc123"},
+		logCall("2026-08-10", ""): {Output: "a" + separator + "feat: dentro do período"},
+	})
+
+	entries, err := NewRepo(runner).Entries(t.Context(), "2026-08-10", "")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entradas = %v, queria uma", entries)
+	}
+}
+
+func TestEntriesFiltersUntil(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		verifyHead:                {Output: "abc123"},
+		logCall("", "2026-08-10"): {Output: "a" + separator + "feat: dentro do período"},
+	})
+
+	entries, err := NewRepo(runner).Entries(t.Context(), "", "2026-08-10")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entradas = %v, queria uma", entries)
+	}
+}
+
+func TestEntriesFiltersSinceAndUntil(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		verifyHead:                          {Output: "abc123"},
+		logCall("2026-08-01", "2026-08-10"): {Output: "a" + separator + "feat: dentro do período"},
+	})
+
+	entries, err := NewRepo(runner).Entries(t.Context(), "2026-08-01", "2026-08-10")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entradas = %v, queria uma", entries)
+	}
+}
+
 func TestEntriesWithNoCommitsYet(t *testing.T) {
 	runner := gittest.NewRunner(map[string]gittest.Response{
 		verifyHead: {Err: &git.ExitError{Code: 1, Message: ""}},
 	})
 
-	entries, err := NewRepo(runner).Entries(t.Context())
+	entries, err := NewRepo(runner).Entries(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("repositório sem commit ainda não é erro, veio %v", err)
 	}
@@ -181,7 +238,7 @@ func TestEntriesPropagatesRevParseFailure(t *testing.T) {
 		verifyHead: {Err: errNotARepository},
 	})
 
-	if _, err := NewRepo(runner).Entries(t.Context()); err == nil {
+	if _, err := NewRepo(runner).Entries(t.Context(), "", ""); err == nil {
 		t.Fatal("falha real do rev-parse não pode virar lista vazia")
 	}
 }
@@ -192,7 +249,7 @@ func TestEntriesPropagatesLogFailure(t *testing.T) {
 		logFormat:  {Err: errNotARepository},
 	})
 
-	if _, err := NewRepo(runner).Entries(t.Context()); err == nil {
+	if _, err := NewRepo(runner).Entries(t.Context(), "", ""); err == nil {
 		t.Fatal("falha do log tem de virar erro")
 	}
 }
