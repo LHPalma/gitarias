@@ -23,6 +23,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, client web.Client, find
 	}
 
 	command.AddCommand(newAuthorCommand(runner))
+	command.AddCommand(newBlameAICommand(runner))
 	command.AddCommand(newBranchesCommand(runner))
 	command.AddCommand(newChangelogCommand(runner))
 	command.AddCommand(newChurnCommand(runner))
