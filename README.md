@@ -861,6 +861,55 @@ tab sugere só esses diretórios.
 continua rastreando quem já estava dentro. É a confusão número um do
 `.gitignore`, e vale saber ao procurar algo que "deveria ter sumido".
 
+### `gtr changelog`
+
+Gera o `CHANGELOG.md` a partir do histórico do `HEAD` atual, classificando
+cada commit pelo [Conventional Commits](https://www.conventionalcommits.org/)
+e agrupando por tipo.
+
+```
+$ gtr changelog
+## [Unreleased]
+
+### Features
+
+- gtr changelog agrupa por tipo do Conventional Commits (`a1b2c3d`)
+
+### Bug Fixes
+
+- corrige o parser de escopo (`9f8e7d6`)
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
+| `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` — o `gtr` não escreve o `CHANGELOG.md` sozinho |
+| `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
+| `--no-header` | `false` | Só com `csv` ou `tsv`. Omite a linha de nomes das colunas |
+
+`--format text` (o padrão) é o único que produz o Markdown de verdade; para
+gravar o arquivo, `gtr changelog --output CHANGELOG.md`. Os outros três
+formatos servem para consumo por script: uma linha por commit, com as
+colunas `hash`, `tipo`, `escopo`, `breaking` e `assunto` — o `tipo` sai como
+o token do Conventional Commits (`feat`, `fix`...), nunca traduzido.
+
+**Sem tag nenhuma no repositório, tudo cai em `[Unreleased]`.** O `gtr` ainda
+não sabe fatiar por versão — quando o projeto começar a taguear releases,
+isso é trabalho futuro, não uma promessa desta versão.
+
+**Onze tipos reconhecidos:** `feat`, `fix`, `perf`, `refactor`, `docs`,
+`test`, `build`, `ci`, `chore`, `style` e `revert`, cada um com sua seção,
+nessa ordem, e só aparecem as que têm commit. **Todo tipo aparece por
+padrão** — não há como esconder `chore`/`test`/`ci`/`style`; isso é trabalho
+do `.gtr.yaml` (ADR-004), que ainda não existe. Commit que não segue a
+convenção cai em `Miscellaneous`, assunto cru e tudo, e nunca é descartado.
+
+**`!` antes dos dois-pontos marca mudança incompatível** (`feat!: ...`),
+mostrado como `⚠ BREAKING:` na frente do assunto. O rodapé `BREAKING
+CHANGE:` no corpo do commit — a outra forma que a spec permite — **não** é
+lido: exigiria o corpo inteiro do commit, não só o assunto, e não há nenhum
+commit real no histórico do `gitarias` para medir o parser contra ele.
+
 **Para script e para planilha:**
 
 ```
