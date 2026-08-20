@@ -882,6 +882,8 @@ $ gtr changelog
 
 | Flag | Padrão | Efeito |
 |---|---|---|
+| `--since <data>` | vazio | Início do período, `AAAA-MM-DD`; sem ela, sem limite inferior |
+| `--until <data>` | vazio | Fim do período, `AAAA-MM-DD`; sem ela, sem limite superior |
 | `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
 | `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` — o `gtr` não escreve o `CHANGELOG.md` sozinho |
 | `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
@@ -892,6 +894,16 @@ gravar o arquivo, `gtr changelog --output CHANGELOG.md`. Os outros três
 formatos servem para consumo por script: uma linha por commit, com as
 colunas `hash`, `tipo`, `escopo`, `breaking` e `assunto` — o `tipo` sai como
 o token do Conventional Commits (`feat`, `fix`...), nunca traduzido.
+
+**Sem `--since` nem `--until`, o período é o histórico inteiro** — diferente
+do `gtr profile`, onde a ausência das duas vale "hoje". `--since` sozinha
+não tem teto; `--until` sozinha não tem piso; as duas juntas fecham o
+intervalo dos dois lados. Cada uma vira meia-noite ou 23:59:59 explícita
+antes de chegar ao git, a mesma disciplina do `profile`.
+
+```
+$ gtr changelog --since 2026-08-01 --until 2026-08-15
+```
 
 **Sem tag nenhuma no repositório, tudo cai em `[Unreleased]`.** O `gtr` ainda
 não sabe fatiar por versão — quando o projeto começar a taguear releases,
@@ -1029,7 +1041,7 @@ e `stats`. Todos aceitam `--format`, menos o `licenses`, que imprime texto de
 licença, e o `undo` e o `author`, que são interativos.
 
 Planejados: seleção interativa de quais branches apagar, `gtr split` para
-quebrar a árvore suja em vários commits, `gtr ignore add`, `stats`, `changelog`
+quebrar a árvore suja em vários commits, `gtr ignore add`, `stats`
 e arquivo de configuração opcional.
 
 ## Licença
