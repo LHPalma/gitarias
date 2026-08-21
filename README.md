@@ -861,6 +861,55 @@ tab sugere só esses diretórios.
 continua rastreando quem já estava dentro. É a confusão número um do
 `.gitignore`, e vale saber ao procurar algo que "deveria ter sumido".
 
+### `gtr ignore add`
+
+Adiciona um padrão ao que é ignorado — escreve num dos três arquivos que o
+`--exclude-standard` enxerga. **O `gtr` não elege o destino em silêncio:**
+sem flag, grava na convenção do time.
+
+```
+$ gtr ignore add "*.log"
+Adicionado *.log a /caminho/do/repo/.gitignore.
+Aviso: a regra não pegou nenhum caminho existente agora — pode ser regra preventiva.
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--local` | `false` | Grava em `.git/info/exclude` em vez da raiz — vale só neste clone |
+| `--global` | `false` | Grava em `core.excludesFile` em vez da raiz — vale na máquina inteira |
+| `--force` | `false` | Só com `--global`: configura e cria o `core.excludesFile` quando ele ainda não existe, em vez de recusar |
+
+`--local` e `--global` são exclusivos entre si. `--force` sem `--global`
+é recusado — flag setada de propósito e descartada em silêncio é o pior
+modo de falha que existe.
+
+**A ordem das verificações, antes e depois de gravar:**
+1. O padrão já está coberto por uma regra existente? Informa qual e
+   **não grava** — `*.log` já cobre `app.log`, adicioná-lo de novo é lixo.
+2. A linha já existe, idêntica, no destino? **Não grava** de novo.
+3. Escapa `#` e `!` no início e espaço final antes de anexar — sem isso a
+   linha grava vira comentário, negação, ou perde o espaço, sem avisar.
+4. Garante quebra de linha antes de anexar, e cria o arquivo (e o
+   diretório) quando faltam.
+5. Depois de gravar, confere se a regra pegou algum caminho de verdade.
+   `node_module/` sem o `s` grava com sucesso e não ignora nada — mas não é
+   erro: pode ser regra preventiva, escrita antes de o caminho existir.
+6. Confere se algum caminho pego já está rastreado — a regra fica inócua
+   até um `git rm --cached`, que o `gtr` **nunca executa sozinho**.
+
+Sem `core.excludesFile` configurado, `--global` recusa em vez de inventar
+um caminho, e a mensagem já traz o comando pronto para colar — ou o
+`--force` para o `gtr` resolver sozinho:
+
+```
+$ gtr ignore add --global "*.swp"
+erro: core.excludesFile não está configurado; rode `git config --global core.excludesFile /home/voce/.config/git/ignore` (ou o caminho que preferir) e tente de novo, ou repita com --force para o gtr configurar e criar
+
+$ gtr ignore add --global --force "*.swp"
+Adicionado *.swp a /home/voce/.config/git/ignore.
+Aviso: a regra não pegou nenhum caminho existente agora — pode ser regra preventiva.
+```
+
 ### `gtr changelog`
 
 Gera o `CHANGELOG.md` a partir do histórico do `HEAD` atual, classificando
