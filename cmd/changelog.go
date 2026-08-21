@@ -54,7 +54,9 @@ func runChangelog(command *cobra.Command, repo *changelog.Repo, options changelo
 		return err
 	}
 
-	return emit(command.OutOrStdout(), options.output, "changelog", chosen, changelogTable{entries: entries})
+	table := changelogTable{entries: entries, since: options.since, until: options.until}
+
+	return emit(command.OutOrStdout(), options.output, "changelog", chosen, table)
 }
 
 // validateChangelogPeriod aceita since/until vazias — sem elas o changelog

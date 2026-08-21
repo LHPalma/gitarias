@@ -297,6 +297,60 @@ func TestChangelogPropagatesWriteFailure(t *testing.T) {
 	}
 }
 
+func TestChangelogEmptyRangeMessageMentionsSince(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree":             {Output: "true"},
+		"rev-parse --verify --quiet HEAD":             {Output: "abc123"},
+		changelogLog + " --since=2026-08-15 00:00:00": {Output: ""},
+	}
+
+	result := execute(t, responses, "", "changelog", "--since", "2026-08-15")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "Nenhum commit desde 2026-08-15.") {
+		t.Errorf("saída = %q, tem de nomear o --since aplicado, não soar como repositório vazio", result.stdout)
+	}
+	if strings.Contains(result.stdout, "no histórico deste repositório") {
+		t.Errorf("saída = %q, o repositório tem commit — só o período pedido é que não casou com nenhum", result.stdout)
+	}
+}
+
+func TestChangelogEmptyRangeMessageMentionsUntil(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree":             {Output: "true"},
+		"rev-parse --verify --quiet HEAD":             {Output: "abc123"},
+		changelogLog + " --until=2020-01-01 23:59:59": {Output: ""},
+	}
+
+	result := execute(t, responses, "", "changelog", "--until", "2020-01-01")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "Nenhum commit até 2020-01-01.") {
+		t.Errorf("saída = %q, tem de nomear o --until aplicado", result.stdout)
+	}
+}
+
+func TestChangelogEmptyRangeMessageMentionsBoth(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree":                                         {Output: "true"},
+		"rev-parse --verify --quiet HEAD":                                         {Output: "abc123"},
+		changelogLog + " --since=2026-08-01 00:00:00 --until=2026-08-10 23:59:59": {Output: ""},
+	}
+
+	result := execute(t, responses, "", "changelog", "--since", "2026-08-01", "--until", "2026-08-10")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "Nenhum commit entre 2026-08-01 e 2026-08-10.") {
+		t.Errorf("saída = %q, tem de nomear as duas pontas do período", result.stdout)
+	}
+}
+
 func TestChangelogOutputDefaultsToMarkdown(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "CHANGELOG")
 

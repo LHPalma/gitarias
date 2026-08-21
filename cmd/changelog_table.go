@@ -11,6 +11,8 @@ import (
 
 type changelogTable struct {
 	entries []changelog.Entry
+	since   string
+	until   string
 }
 
 // textExtension: o --format text do changelog é Markdown de verdade, não
@@ -54,7 +56,7 @@ func (data changelogTable) document() any {
 // em Miscellaneous fecha a lista.
 func (data changelogTable) text(output io.Writer) error {
 	if len(data.entries) == 0 {
-		_, err := fmt.Fprintln(output, "Nenhum commit no histórico deste repositório.")
+		_, err := fmt.Fprintln(output, data.emptyMessage())
 		return err
 	}
 
@@ -79,6 +81,25 @@ func (data changelogTable) text(output io.Writer) error {
 	}
 
 	return writer.Flush()
+}
+
+// emptyMessage distingue repositório sem commit nenhum de --since/--until
+// que não casou com nada — as duas dão a mesma lista vazia do
+// internal/changelog.Repo, mas dizer "nenhum commit no histórico deste
+// repositório" quando o repositório tem centenas, só fora do período
+// pedido, é enganoso: soa como repositório vazio, e não é isso que
+// aconteceu.
+func (data changelogTable) emptyMessage() string {
+	switch {
+	case data.since != "" && data.until != "":
+		return fmt.Sprintf("Nenhum commit entre %s e %s.", data.since, data.until)
+	case data.since != "":
+		return fmt.Sprintf("Nenhum commit desde %s.", data.since)
+	case data.until != "":
+		return fmt.Sprintf("Nenhum commit até %s.", data.until)
+	default:
+		return "Nenhum commit no histórico deste repositório."
+	}
 }
 
 func changelogLine(entry changelog.Entry) string {
