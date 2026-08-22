@@ -246,6 +246,35 @@ caminho,atual,branch,head,destacado,bare,trancado,motivo_trancado,podável,motiv
 
 No `json` os booleanos são booleanos, e não `sim`/`não`.
 
+### `gtr worktrees remove`
+
+Remove um working tree, com confirmação. `git worktree remove` sozinho já
+recusa apagar arquivo versionado sujo ou não rastreado — mas não conta
+arquivo **ignorado** como nenhum dos dois, então um `.env` ou `node_modules/`
+esquecido ali some em silêncio, com exit 0, sem chance de recuperação depois:
+arquivo ignorado nunca esteve no git. Este comando lista o que seria perdido
+antes de perguntar — ADR-007.
+
+```
+$ gtr worktrees remove ../projeto-fix
+/home/voce/projeto-fix: 3 arquivos ignorados serão perdidos, sem chance de recuperação:
+  .env
+  dist/
+  node_modules/
+Remover /home/voce/projeto-fix? [y/N] y
+Pronto.
+```
+
+O caminho aceita tanto o relativo digitado quanto o absoluto que o próprio
+`gtr worktrees` mostra; o que não bate com nenhum working tree listado é
+recusado antes de qualquer pergunta.
+
+**O que o git recusaria continua recusado.** Sem `--force` nenhum: arquivo
+versionado modificado ou não rastreado, ou working tree em uso, fazem o
+comando terminar no mesmo erro que `git worktree remove` daria sozinho — a
+guarda deste comando é a lista de ignorados, nunca uma forma de contornar o
+que o git já protege.
+
 ### `gtr commits check`
 
 Roda um comando em **cada commit** de um intervalo, com a árvore daquele commit
@@ -1170,9 +1199,11 @@ Estas não são configurações — são propriedades do código:
   localmente continua íntegra no servidor.
 - **Nunca apaga a branch atual, a base, a `main` ou a `master`**, mesmo quando
   não são a base.
-- **Nunca mexe em outro working tree.** Branch em uso em outro diretório de
-  trabalho fica fora da lista, com o caminho e as formas de soltar — a escolha
-  entre elas é sua, porque custam coisas diferentes.
+- **`gtr branches` nunca mexe em outro working tree.** Branch em uso em outro
+  diretório de trabalho fica fora da lista, com o caminho e as formas de
+  soltar — a escolha entre elas é sua, porque custam coisas diferentes. A
+  única exceção do `gtr` inteiro é o `gtr worktrees remove`, e só porque foi
+  chamado para isso: nunca como efeito colateral de limpar branch.
 - **Nunca roda através de um shell.** Os comandos git são invocados
   diretamente, sem `sh -c`. Uma branch com nome esquisito chega ao git como
   argumento literal, e o comando de verificação do `commits check` chega como o
