@@ -81,3 +81,39 @@ func parse(output string) []Worktree {
 
 	return worktrees
 }
+
+// IgnoredFiles lista o que está ignorado no working tree em path — o que
+// git worktree remove apagaria junto com o diretório, sem contar como sujo
+// para o git, e sem chance de recuperação depois. É a prova da cláusula 1
+// da ADR-008 que esta operação consegue dar: mostrar o que se perde, não
+// garantir que volta.
+func (repo *Repo) IgnoredFiles(ctx context.Context, path string) ([]string, error) {
+	output, err := repo.runner.Run(ctx, "-C", path,
+		"ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "--no-empty-directory", "-z")
+	if err != nil {
+		return nil, err
+	}
+
+	return splitNUL(output), nil
+}
+
+// Remove executa git worktree remove em path, sem --force: se o git recusar
+// por causa de arquivo versionado sujo ou não rastreado, o erro é
+// propagado — ADR-007.
+func (repo *Repo) Remove(ctx context.Context, path string) error {
+	_, err := repo.runner.Run(ctx, "worktree", "remove", path)
+	return err
+}
+
+func splitNUL(output string) []string {
+	if output == "" {
+		return nil
+	}
+
+	fields := strings.Split(output, "\x00")
+	if fields[len(fields)-1] == "" {
+		fields = fields[:len(fields)-1]
+	}
+
+	return fields
+}

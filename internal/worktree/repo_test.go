@@ -204,6 +204,95 @@ func TestEnsure(t *testing.T) {
 	}
 }
 
+func TestIgnoredFilesListsThroughDashC(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"-C /wt ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+			Output: ".env\x00node_modules/\x00",
+		},
+	})
+
+	files, err := NewRepo(runner).IgnoredFiles(t.Context(), "/wt")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	want := []string{".env", "node_modules/"}
+	if len(files) != len(want) {
+		t.Fatalf("veio %v, queria %v", files, want)
+	}
+	for index, entry := range want {
+		if files[index] != entry {
+			t.Errorf("arquivo %d: veio %q, queria %q", index, files[index], entry)
+		}
+	}
+}
+
+func TestIgnoredFilesEmptyWithNothingIgnored(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"-C /wt ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {Output: ""},
+	})
+
+	files, err := NewRepo(runner).IgnoredFiles(t.Context(), "/wt")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if files != nil {
+		t.Errorf("esperava nil, veio %v", files)
+	}
+}
+
+func TestIgnoredFilesPropagatesGitError(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"-C /wt ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+			Err: errors.New("fatal: not a git repository"),
+		},
+	})
+
+	if _, err := NewRepo(runner).IgnoredFiles(t.Context(), "/wt"); err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+}
+
+func TestRemoveRunsWorktreeRemove(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"worktree remove /wt": {Output: ""},
+	})
+
+	if err := NewRepo(runner).Remove(t.Context(), "/wt"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+}
+
+func TestRemovePropagatesGitError(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"worktree remove /wt": {Err: errors.New("fatal: contains modified or untracked files, use --force to delete it")},
+	})
+
+	err := NewRepo(runner).Remove(t.Context(), "/wt")
+	if err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(err.Error(), "use --force to delete it") {
+		t.Errorf("erro deveria carregar a mensagem do git, veio %v", err)
+	}
+}
+
+func TestRemoveNeverPassesForce(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"worktree remove /wt": {Output: ""},
+	})
+
+	if err := NewRepo(runner).Remove(t.Context(), "/wt"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	for _, call := range runner.Calls {
+		if strings.Contains(call, "--force") {
+			t.Fatalf("ADR-007: remove nunca passa --force ao git, mas rodou %q", call)
+		}
+	}
+}
+
 func TestListNeverReadsRemoteRefs(t *testing.T) {
 	runner := gittest.NewRunner(map[string]gittest.Response{
 		listCommand:     {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main"},
