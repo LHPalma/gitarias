@@ -326,6 +326,244 @@ func TestWorktreesCommandPropagatesListFailure(t *testing.T) {
 	}
 }
 
+func TestWorktreesRemoveListsIgnoredFilesAndAsks(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel": {Output: "/repo"},
+		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+			Output: ".env\x00node_modules/\x00",
+		},
+		"worktree remove /repo-fix": {Output: ""},
+	}
+
+	result := execute(t, responses, "y\n", "worktrees", "remove", "/repo-fix")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "2 arquivos ignorados serão perdidos, sem chance de recuperação") {
+		t.Errorf("saída = %q, queria o aviso dos ignorados", result.stdout)
+	}
+	if !strings.Contains(result.stdout, ".env") || !strings.Contains(result.stdout, "node_modules/") {
+		t.Errorf("saída = %q, queria os dois arquivos listados", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "Remover /repo-fix? [y/N] ") {
+		t.Errorf("saída = %q, queria a pergunta de confirmação", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "Pronto.") {
+		t.Errorf("saída = %q, queria a confirmação de sucesso", result.stdout)
+	}
+
+	var removed bool
+	for _, call := range result.calls {
+		if call == "worktree remove /repo-fix" {
+			removed = true
+		}
+	}
+	if !removed {
+		t.Errorf("esperava a chamada de remoção entre %v", result.calls)
+	}
+}
+
+func TestWorktreesRemoveSingularMessage(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel": {Output: "/repo"},
+		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+			Output: ".env\x00",
+		},
+	}
+
+	result := execute(t, responses, "n\n", "worktrees", "remove", "/repo-fix")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "1 arquivo ignorado será perdido, sem chance de recuperação") {
+		t.Errorf("saída = %q, queria a mensagem no singular", result.stdout)
+	}
+}
+
+func TestWorktreesRemoveWithoutIgnoredFiles(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel": {Output: "/repo"},
+		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {Output: ""},
+		"worktree remove /repo-fix": {Output: ""},
+	}
+
+	result := execute(t, responses, "y\n", "worktrees", "remove", "/repo-fix")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "/repo-fix não tem arquivo ignorado a perder.") {
+		t.Errorf("saída = %q, queria a mensagem de nada a perder", result.stdout)
+	}
+}
+
+func TestWorktreesRemoveCancelledNeverCallsGit(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel": {Output: "/repo"},
+		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {Output: ".env\x00"},
+	}
+
+	result := execute(t, responses, "\n", "worktrees", "remove", "/repo-fix")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "Cancelado, nada foi removido.") {
+		t.Errorf("saída = %q, queria o cancelamento", result.stdout)
+	}
+	for _, call := range result.calls {
+		if strings.HasPrefix(call, "worktree remove ") {
+			t.Fatalf("RF-04: Enter vazio cancela, mas rodou %q", call)
+		}
+	}
+}
+
+func TestWorktreesRemoveRejectsPathThatIsNotAWorktree(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain":       {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n"},
+		"rev-parse --show-toplevel":       {Output: "/repo"},
+	}
+
+	result := execute(t, responses, "", "worktrees", "remove", "/nao-existe")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(result.err.Error(), "não é um working tree deste repositório") {
+		t.Errorf("erro = %v, queria a mensagem específica", result.err)
+	}
+	if result.stdout != "" {
+		t.Errorf("RN-09: nada pode ir para o stdout, veio %q", result.stdout)
+	}
+}
+
+func TestWorktreesRemovePropagatesGitRefusal(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel": {Output: "/repo"},
+		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {Output: ""},
+		"worktree remove /repo-fix": {Err: errors.New("fatal: contains modified or untracked files, use --force to delete it")},
+	}
+
+	result := execute(t, responses, "y\n", "worktrees", "remove", "/repo-fix")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(result.err.Error(), "use --force to delete it") {
+		t.Errorf("erro deveria carregar a mensagem do git, veio %v", result.err)
+	}
+}
+
+func TestWorktreesRemovePropagatesIgnoredFilesFailure(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel": {Output: "/repo"},
+		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+			Err: errNotARepository,
+		},
+	}
+
+	result := execute(t, responses, "", "worktrees", "remove", "/repo-fix")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	for _, call := range result.calls {
+		if strings.HasPrefix(call, "worktree remove ") {
+			t.Fatalf("não pode remover sem antes conseguir listar os ignorados, mas rodou %q", call)
+		}
+	}
+}
+
+func TestWorktreesRemovePropagatesListFailure(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain":       {Err: errNotARepository},
+	}
+
+	result := execute(t, responses, "", "worktrees", "remove", "/repo-fix")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+}
+
+func TestWorktreesRemovePropagatesWriteFailure(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel": {Output: "/repo"},
+		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+			Output: ".env\x00",
+		},
+	}
+
+	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
+	command.SetOut(brokenWriter{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"worktrees", "remove", "/repo-fix"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha de escrita tem de virar erro")
+	}
+}
+
+func TestWorktreesRemovePropagatesReadFailure(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel": {Output: "/repo"},
+		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+			Output: "",
+		},
+	}
+
+	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetIn(brokenReader{})
+	command.SetArgs([]string{"worktrees", "remove", "/repo-fix"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha na leitura da confirmação tem de virar erro")
+	}
+}
+
+func TestWorktreesRemoveOutsideRepository(t *testing.T) {
+	responses := map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Err: errNotARepository}}
+
+	result := execute(t, responses, "", "worktrees", "remove", "/qualquer")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(result.err.Error(), "não é um repositório git") {
+		t.Fatalf("erro = %v, queria o do Ensure e não o de outra etapa", result.err)
+	}
+}
+
 func TestWorktreesCommandShowsTheStateColumn(t *testing.T) {
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},
