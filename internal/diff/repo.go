@@ -138,6 +138,20 @@ func (repo *Repo) Verify(ctx context.Context, patch Patch) error {
 	return err
 }
 
+// Apply roda git apply sobre content, escrevendo direto na árvore de
+// trabalho — ao contrário de Export/Verify, que nunca tocam nem ela nem o
+// índice. Não passa --index nem --cached: fica no comportamento padrão do
+// git apply, que só altera os arquivos, deixando o índice como estava —
+// quem recebe decide o que fazer com `git add` depois. git apply já é
+// atômico: se qualquer hunk não bater com o que está no disco, nada é
+// escrito, nem os arquivos que aplicariam sozinhos — não há checagem prévia
+// a fazer aqui que o próprio comando não faça primeiro.
+func (repo *Repo) Apply(ctx context.Context, content string) error {
+	_, err := repo.runner.RunWithInputAndEnv(ctx, content, nil, "apply")
+
+	return err
+}
+
 // freshIndex cria um diretório temporário e aponta GIT_INDEX_FILE pra dentro
 // dele, populado com read-tree HEAD — um índice que começa idêntico ao HEAD,
 // sem nenhum staged do índice real. O diretório volta junto do cleanup, então

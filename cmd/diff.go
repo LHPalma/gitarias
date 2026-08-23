@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"github.com/LHPalma/gitarias/internal/diff"
 	"github.com/LHPalma/gitarias/internal/ui"
@@ -16,6 +18,7 @@ func newDiffCommand(runner Runner) *cobra.Command {
 	}
 
 	command.AddCommand(newDiffExportCommand(runner))
+	command.AddCommand(newDiffApplyCommand(runner))
 
 	return command
 }
@@ -67,6 +70,75 @@ func runDiffExport(command *cobra.Command, repo *diff.Repo, includeIgnored bool)
 	}
 
 	return summarizeExport(command.ErrOrStderr(), changes, patch.Base)
+}
+
+func newDiffApplyCommand(runner Runner) *cobra.Command {
+	command := &cobra.Command{
+		Use:   "apply [caminho]",
+		Short: "Aplica um patch na árvore de trabalho, sem tocar no índice",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			return runDiffApply(command, diff.NewRepo(runner), args)
+		},
+	}
+
+	return command
+}
+
+func runDiffApply(command *cobra.Command, repo *diff.Repo, args []string) error {
+	ctx := command.Context()
+
+	if err := repo.Ensure(ctx); err != nil {
+		return err
+	}
+
+	content, err := readPatch(command, args)
+	if err != nil {
+		return err
+	}
+
+	if err := repo.Apply(ctx, content); err != nil {
+		return err
+	}
+
+	files := countFiles(content)
+	_, err = fmt.Fprintf(command.OutOrStdout(), "Patch aplicado: %s.\n",
+		ui.Plural(files, "1 arquivo alterado", fmt.Sprintf("%d arquivos alterados", files)))
+
+	return err
+}
+
+// readPatch lê o patch do caminho dado ou, sem argumento, do stdin — o mesmo
+// padrão do próprio git apply, que também cai pro stdin sem um arquivo.
+func readPatch(command *cobra.Command, args []string) (string, error) {
+	if len(args) == 1 {
+		content, err := os.ReadFile(args[0])
+		if err != nil {
+			return "", err
+		}
+
+		return string(content), nil
+	}
+
+	content, err := io.ReadAll(command.InOrStdin())
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
+}
+
+// countFiles conta os arquivos que o patch toca, contando as ocorrências de
+// "diff --git " — o separador que abre cada arquivo num patch unificado do
+// git. É só para o resumo; quem decide se o patch é válido é o próprio
+// git apply, não esta contagem.
+func countFiles(content string) int {
+	count := strings.Count(content, "\ndiff --git ")
+	if strings.HasPrefix(content, "diff --git ") {
+		count++
+	}
+
+	return count
 }
 
 func summarizeExport(output io.Writer, changes []diff.Change, base string) error {

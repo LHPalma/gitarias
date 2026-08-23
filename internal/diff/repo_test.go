@@ -329,3 +329,32 @@ func TestVerifyPropagatesTheApplyCheckFailure(t *testing.T) {
 		t.Fatal("patch que não aplica tem de virar erro — é a garantia da feature")
 	}
 }
+
+// TestApplyRunsPlainApplyWithThePatchOnStdin prova que Apply, ao contrário
+// de Export/Verify, roda sobre a árvore de trabalho de verdade: nem --cached
+// nem GIT_INDEX_FILE — é o comportamento padrão do git apply, que altera só
+// os arquivos e deixa o índice como estava.
+func TestApplyRunsPlainApplyWithThePatchOnStdin(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{"apply": {Output: ""}})
+
+	if err := NewRepo(runner).Apply(t.Context(), "conteúdo do patch"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	if runner.Inputs["apply"] != "conteúdo do patch" {
+		t.Errorf("stdin do apply = %q, queria o patch inteiro", runner.Inputs["apply"])
+	}
+	if len(runner.Envs["apply"]) != 0 {
+		t.Errorf("ambiente do apply = %v, Apply não monta índice nenhum", runner.Envs["apply"])
+	}
+}
+
+func TestApplyPropagatesTheFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"apply": {Err: errors.New("error: patch does not apply")},
+	})
+
+	if err := NewRepo(runner).Apply(t.Context(), "conteúdo do patch"); err == nil {
+		t.Fatal("patch que não aplica tem de virar erro")
+	}
+}
