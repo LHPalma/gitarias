@@ -11,8 +11,9 @@ import (
 
 // answers descreve um GitHub que responde o que o teste mandar.
 type answers struct {
-	login string
-	err   error
+	login  string
+	scopes []string
+	err    error
 }
 
 func (source answers) PullRequests(context.Context, int) ([]forge.PullRequest, error) {
@@ -21,6 +22,10 @@ func (source answers) PullRequests(context.Context, int) ([]forge.PullRequest, e
 
 func (source answers) Viewer(context.Context) (string, error) {
 	return source.login, source.err
+}
+
+func (source answers) Scopes(context.Context) ([]string, error) {
+	return source.scopes, source.err
 }
 
 func TestConnectedNamesWhoTheGitHubAccepted(t *testing.T) {

@@ -440,10 +440,15 @@ func TestDoctorStaysLocalWithoutTheFlag(t *testing.T) {
 	}
 }
 
-func TestDoctorOnlineAsksTheGitHubWhoWeAre(t *testing.T) {
-	outcomes := append(gitFound(), exectest.Response{Result: exec.Result{Output: `{"login":"LHPalma"}`}})
+func onlineFound() []exectest.Response {
+	return append(gitFound(),
+		exectest.Response{Result: exec.Result{Output: `{"login":"LHPalma"}`}},
+		exectest.Response{Result: exec.Result{Output: "HTTP/2.0 200 OK\r\nX-Oauth-Scopes: repo, read:user\r\n\r\n{}"}},
+	)
+}
 
-	result := diagnosingIn(t, healthyRepository(), outcomes, "doctor", "--online")
+func TestDoctorOnlineAsksTheGitHubWhoWeAre(t *testing.T) {
+	result := diagnosingIn(t, healthyRepository(), onlineFound(), "doctor", "--online")
 
 	if result.err != nil {
 		t.Fatalf("não esperava erro, veio %v", result.err)
@@ -453,8 +458,21 @@ func TestDoctorOnlineAsksTheGitHubWhoWeAre(t *testing.T) {
 	}
 }
 
+func TestDoctorOnlineAsksTheScopesTheTokenCarries(t *testing.T) {
+	result := diagnosingIn(t, healthyRepository(), onlineFound(), "doctor", "--online")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "escopo") {
+		t.Errorf("saída = %q, queria a checagem de escopo", result.stdout)
+	}
+}
+
 func TestDoctorOnlineFailsWithoutCredential(t *testing.T) {
 	outcomes := append(gitFound(), exectest.Response{
+		Result: exec.Result{Code: 4, Output: "please run: gh auth login"},
+	}, exectest.Response{
 		Result: exec.Result{Code: 4, Output: "please run: gh auth login"},
 	})
 
@@ -477,11 +495,9 @@ func TestDoctorDeclaresTheNetworkOfTheFlag(t *testing.T) {
 }
 
 func TestPluggedIsTheSameFlag(t *testing.T) {
-	outcomes := append(gitFound(), exectest.Response{Result: exec.Result{Output: `{"login":"LHPalma"}`}})
-	byName := diagnosingIn(t, healthyRepository(), outcomes, "doctor", "--online")
+	byName := diagnosingIn(t, healthyRepository(), onlineFound(), "doctor", "--online")
 
-	outcomes = append(gitFound(), exectest.Response{Result: exec.Result{Output: `{"login":"LHPalma"}`}})
-	byAlias := diagnosingIn(t, healthyRepository(), outcomes, "doctor", "--plugged")
+	byAlias := diagnosingIn(t, healthyRepository(), onlineFound(), "doctor", "--plugged")
 
 	if byAlias.err != nil {
 		t.Fatalf("o apelido tem de valer pela flag, veio %v", byAlias.err)

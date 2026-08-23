@@ -208,3 +208,112 @@ func TestViewerRefusesAnAnswerItCannotRead(t *testing.T) {
 		t.Fatal("resposta ilegivel tem de virar erro")
 	}
 }
+
+const withScopes = "HTTP/2.0 200 OK\r\n" +
+	"Content-Type: application/json; charset=utf-8\r\n" +
+	"X-Oauth-Scopes: gist, read:org, read:user, repo, workflow\r\n" +
+	"X-Accepted-Oauth-Scopes: \r\n" +
+	"\r\n" +
+	`{"login":"LHPalma"}`
+
+func TestScopesReadsTheOauthScopesHeader(t *testing.T) {
+	scopes, err := NewCLI(answering(withScopes)).Scopes(t.Context())
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+
+	want := []string{"gist", "read:org", "read:user", "repo", "workflow"}
+	if strings.Join(scopes, ",") != strings.Join(want, ",") {
+		t.Errorf("escopos = %v, queria %v", scopes, want)
+	}
+}
+
+func TestScopesAsksTheRestEndpointWithHeaders(t *testing.T) {
+	commands := answering(withScopes)
+
+	NewCLI(commands).Scopes(t.Context())
+
+	if got := strings.Join(commands.Calls[0].Args, " "); got != "api user -i" {
+		t.Errorf("chamada = %q; o -i traz os cabecalhos, e e onde o escopo mora", got)
+	}
+}
+
+func TestScopesIgnoresTheAcceptedScopesHeader(t *testing.T) {
+	scopes, err := NewCLI(answering(withScopes)).Scopes(t.Context())
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	for _, scope := range scopes {
+		if scope == "" {
+			t.Errorf("escopos = %v; o Accepted-Oauth-Scopes vazio nao pode virar escopo vazio", scopes)
+		}
+	}
+}
+
+func TestScopesIsEmptyWhenTheHeaderIsMissing(t *testing.T) {
+	scopes, err := NewCLI(answering(`{"login":"LHPalma"}`)).Scopes(t.Context())
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if len(scopes) != 0 {
+		t.Errorf("escopos = %v, queria nenhum: resposta sem o cabecalho nao e erro", scopes)
+	}
+}
+
+func TestScopesIsEmptyWhenTheTokenHasNone(t *testing.T) {
+	empty := "HTTP/2.0 200 OK\r\nX-Oauth-Scopes: \r\n\r\n" + `{"login":"LHPalma"}`
+
+	scopes, err := NewCLI(answering(empty)).Scopes(t.Context())
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if len(scopes) != 0 {
+		t.Errorf("escopos = %v, queria nenhum", scopes)
+	}
+}
+
+func TestScopesSaysWhenTheGhIsNotThere(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{Err: errors.New("executable file not found in $PATH")})
+
+	if _, err := NewCLI(commands).Scopes(t.Context()); !errors.Is(err, ErrUnavailable) {
+		t.Errorf("erro = %v, queria a ausencia do gh", err)
+	}
+}
+
+func TestScopesSeparatesHavingNoCredentialFromBeingRefused(t *testing.T) {
+	tests := []struct {
+		name   string
+		result exec.Result
+		want   error
+	}{
+		{
+			name:   "sem credencial nenhuma",
+			result: exec.Result{Code: 4, Output: "To get started with GitHub CLI, please run: gh auth login"},
+			want:   ErrUnauthenticated,
+		},
+		{
+			name:   "servidor recusou",
+			result: exec.Result{Code: 1, Output: "gh: Bad credentials (HTTP 401)"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NewCLI(exectest.NewRunner(exectest.Response{Result: test.result})).Scopes(t.Context())
+
+			if err == nil {
+				t.Fatal("os dois casos sao erro")
+			}
+			if test.want != nil && !errors.Is(err, test.want) {
+				t.Errorf("erro = %v, queria %v", err, test.want)
+			}
+			if test.want == nil && errors.Is(err, ErrUnauthenticated) {
+				t.Errorf("erro = %v; ha credencial, ela e que foi recusada", err)
+			}
+		})
+	}
+}

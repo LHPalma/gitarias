@@ -123,3 +123,52 @@ func (source *CLI) Viewer(ctx context.Context) (string, error) {
 
 	return identity.Login, nil
 }
+
+// Scopes devolve as permissões que o token do gh carrega. Existe separado do
+// Viewer porque são duas perguntas independentes — quem o GitHub diz que
+// somos, e o que o token autoriza — e nem todo chamador precisa das duas.
+func (source *CLI) Scopes(ctx context.Context) ([]string, error) {
+	result, err := source.commands.Run(ctx, "", "gh", "api", "user", "-i")
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+
+	if result.Code == unauthenticated {
+		return nil, ErrUnauthenticated
+	}
+	if !result.Passed() {
+		return nil, fmt.Errorf("o GitHub recusou: %s", strings.TrimSpace(result.Output))
+	}
+
+	return scopesFrom(result.Output), nil
+}
+
+// scopesFrom lê o cabeçalho X-Oauth-Scopes da resposta crua que o gh api -i
+// imprime antes do corpo. O nome do cabeçalho chega com a caixa que o
+// servidor escolheu, não a que o padrão HTTP recomendaria, e por isso a busca
+// é insensível a caixa. Cabeçalho ausente ou vazio — token sem escopo nenhum
+// — devolve nil, nunca erro: a resposta chegou e foi entendida.
+func scopesFrom(output string) []string {
+	const header = "x-oauth-scopes:"
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if len(line) < len(header) || !strings.EqualFold(line[:len(header)], header) {
+			continue
+		}
+
+		value := strings.TrimSpace(line[len(header):])
+		if value == "" {
+			return nil
+		}
+
+		scopes := strings.Split(value, ",")
+		for index, scope := range scopes {
+			scopes[index] = strings.TrimSpace(scope)
+		}
+
+		return scopes
+	}
+
+	return nil
+}

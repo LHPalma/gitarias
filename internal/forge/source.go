@@ -8,4 +8,5 @@ import "context"
 type Source interface {
 	PullRequests(ctx context.Context, limit int) ([]PullRequest, error)
 	Viewer(ctx context.Context) (string, error)
+	Scopes(ctx context.Context) ([]string, error)
 }
