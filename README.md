@@ -786,14 +786,17 @@ Aceita os três formatos de sempre — `text`, `csv` e `json` —, `--no-header`
 nenhuma para formatar, e uma flag setada de propósito e descartada calada é
 o pior modo de falha.
 
-**`--by-repo` não quebra o período em janelas nem pagina.** O GitHub não
-oferece cursor para essa consulta — só um teto de 100 repositórios por
-página —, e juntar duas janelas somaria contagens de fontes diferentes sem
-como reconciliá-las por repositório. Por isso `--by-repo` só cobre período de
-até um ano e conta ativa em até 100 repositórios; passado qualquer um dos
-dois, recusa com erro em vez de trazer a lista cortada calada. `--account`
-sozinho, sem `--by-repo`, continua cobrindo qualquer período — ele soma o
-total por janela, e não precisa reconciliar nada por repositório.
+**`--by-repo` também cobre período de mais de um ano**, igual `--account`
+sozinho: quebra em janelas de até um ano e soma por `repositório` — o mesmo
+repositório que aparece em janelas diferentes vira uma linha só, com as
+contagens somadas.
+
+**O teto é por repositório ativo dentro de cada janela, não por período.**
+O GitHub não oferece cursor para essa consulta — só um teto de 100
+repositórios por página —, então, se a conta esteve ativa em mais de 100
+repositórios **dentro de alguma janela de um ano**, `--by-repo` recusa com
+erro nomeando a janela em vez de trazer a lista cortada calada. Períodos
+mais curtos, ou uma conta com menos repositórios ativos, não esbarram nisso.
 
 ### `gtr setup`
 
