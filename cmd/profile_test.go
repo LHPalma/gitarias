@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/LHPalma/gitarias/internal/exec"
+	"github.com/LHPalma/gitarias/internal/exec/exectest"
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/git/gittest"
 )
@@ -221,5 +224,145 @@ func TestProfileTakesNoPositionalArguments(t *testing.T) {
 
 	if result.err == nil {
 		t.Fatal("o profile não recebe argumento posicional; argumento a mais tem de virar erro")
+	}
+}
+
+const (
+	accountContributed = `{"data":{"viewer":{"contributionsCollection":{"totalCommitContributions":42}}}}`
+	unpushedCall       = "rev-list --count @{u}..HEAD"
+)
+
+func inARepository() map[string]gittest.Response {
+	return map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Output: "true"}}
+}
+
+func TestProfileAccountCountsTheWholeGitHubAccount(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+
+	result := executeWith(t, responses, answered(accountContributed),
+		"profile", "--commit-count", "--account", "--since", "2026-08-01", "--until", "2026-08-23")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "42 commits entre 2026-08-01 e 2026-08-23.") {
+		t.Errorf("saída = %q, queria a contagem da conta", result.stdout)
+	}
+}
+
+func TestProfileAccountWarnsAboutUnpushedCommits(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "3"}
+
+	result := executeWith(t, responses, answered(accountContributed), "profile", "--commit-count", "--account")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "3 commits deste repositório ainda são só locais") {
+		t.Errorf("saída = %q; a soma da conta não inclui o que ainda não chegou ao GitHub, e isso tem de estar dito", result.stdout)
+	}
+}
+
+func TestProfileAccountSingularWarning(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "1"}
+
+	result := executeWith(t, responses, answered(accountContributed), "profile", "--commit-count", "--account")
+
+	if !strings.Contains(result.stdout, "1 commit deste repositório ainda é só local,") {
+		t.Errorf("saída = %q, queria o singular", result.stdout)
+	}
+}
+
+func TestProfileAccountStaysQuietWithoutUnpushedCommits(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+
+	result := executeWith(t, responses, answered(accountContributed), "profile", "--commit-count", "--account")
+
+	if strings.Contains(result.stdout, "local") {
+		t.Errorf("saída = %q; nada ficou de fora da contagem, não há o que avisar", result.stdout)
+	}
+}
+
+func TestProfileAccountStaysQuietWithoutAnUpstream(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Err: &git.ExitError{Code: 128, Message: "fatal: no upstream configured for branch 'feat'"}}
+
+	result := executeWith(t, responses, answered(accountContributed), "profile", "--commit-count", "--account")
+
+	if result.err != nil {
+		t.Fatalf("branch sem upstream não é erro, veio %v", result.err)
+	}
+	if strings.Contains(result.stdout, "local") {
+		t.Errorf("saída = %q; sem upstream não há como saber o que falta, e um aviso furado é pior que nenhum", result.stdout)
+	}
+}
+
+func TestProfileAccountWithoutGh(t *testing.T) {
+	outcomes := []exectest.Response{{Err: errors.New("executable file not found in $PATH")}}
+
+	result := executeWith(t, inARepository(), outcomes, "profile", "--commit-count", "--account")
+
+	if result.err == nil {
+		t.Fatal("sem gh o --account não tem como falar com o GitHub")
+	}
+	if !strings.Contains(result.err.Error(), "gtr setup") {
+		t.Errorf("erro = %v; a saída é acionável e o setup diz o comando da máquina", result.err)
+	}
+}
+
+func TestProfileAccountPropagatesWhatTheGhComplained(t *testing.T) {
+	outcomes := []exectest.Response{{Result: exec.Result{Code: 1, Output: "gh: Bad credentials (HTTP 401)"}}}
+
+	result := executeWith(t, inARepository(), outcomes, "profile", "--commit-count", "--account")
+
+	if result.err == nil {
+		t.Fatal("gh que roda e recusa tem de virar erro")
+	}
+	if !strings.Contains(result.err.Error(), "401") {
+		t.Errorf("erro = %v, queria o que o gh disse", result.err)
+	}
+}
+
+func TestProfileAccountOutsideRepository(t *testing.T) {
+	result := executeWith(t, map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Err: errNotARepository},
+	}, answered(accountContributed), "profile", "--commit-count", "--account")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+}
+
+func TestProfileAccountDoesNotNeedALocalIdentity(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+
+	result := executeWith(t, responses, answered(accountContributed), "profile", "--commit-count", "--account")
+
+	if result.err != nil {
+		t.Fatalf("--account fala pelo gh, e não pelo git config; não esperava erro, veio %v", result.err)
+	}
+}
+
+func TestProfileAccountPropagatesTheWriteFailure(t *testing.T) {
+	command := NewRootCommand(gittest.NewRunner(inARepository()), exectest.NewRunner(answered(accountContributed)...), noWeb(), noFinder(), noNotices)
+	command.SetOut(brokenWriter{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"profile", "--commit-count", "--account"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha de escrita tem de virar erro")
+	}
+}
+
+func TestProfileAccountDeclaresTheNetworkCall(t *testing.T) {
+	result := execute(t, profiled(), "", "profile", "--help")
+
+	if !strings.Contains(result.stdout, "REDE") {
+		t.Errorf("ajuda = %q; --account sai da máquina, e isso tem de estar dito", result.stdout)
 	}
 }
