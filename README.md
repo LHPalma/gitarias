@@ -1236,6 +1236,37 @@ $ gtr diff export
 Nada para exportar: a árvore não tem nenhuma mudança não commitada.
 ```
 
+### `gtr diff apply`
+
+Aplica um patch — do `gtr diff export`, de `git format-patch` ou de qualquer
+outra origem — na árvore de trabalho. É um embrulho fino do próprio
+`git apply`: quem decide se o patch aplica é ele, não o `gtr`.
+
+```
+$ gtr diff apply mudancas.patch
+Patch aplicado: 2 arquivos alterados.
+```
+
+Sem caminho, lê do `stdin` — o mesmo que o `git apply` já faz sozinho, e o
+que habilita o par com o `export`:
+
+```bash
+gtr diff export | gtr diff apply
+```
+
+**Só altera os arquivos, nunca o índice.** Sem `--index` nem `--cached`, que
+o `gtr` não passa: o que entra na árvore fica para quem recebeu decidir o
+que rastrear com `git add`, não uma escolha que o `gtr` faz por conta
+própria.
+
+**O `git apply` já é atômico.** Se qualquer arquivo do patch não bater com o
+que está no disco, nada é escrito — nem os que aplicariam sozinhos:
+
+```
+$ gtr diff apply mudancas.patch
+erro: error: b.txt: patch does not apply
+```
+
 ## O que a ferramenta nunca faz
 
 Estas não são configurações — são propriedades do código:
