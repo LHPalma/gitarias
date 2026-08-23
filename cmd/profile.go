@@ -35,9 +35,9 @@ func newProfileCommand(runner Runner, commands exec.Runner) *cobra.Command {
 			"aqui — FAZ CHAMADA DE REDE, pelo gh. A soma vale o que o token consegue\n" +
 			"ler: sem o escopo read:user, contribuições de repositório privado ficam\n" +
 			"de fora, caladas — confira com gtr doctor --online.\n\n" +
-			"--by-repo quebra a soma da conta por repositório, em vez de somar tudo;\n" +
-			"só vale com --account, e só cobre período de até um ano e conta ativa em\n" +
-			"até 100 repositórios — passado disso, recusa em vez de trazer cortado.",
+			"--by-repo quebra a soma da conta por repositório, em vez de somar tudo; só\n" +
+			"vale com --account. Recusa em vez de trazer cortado quando alguma janela\n" +
+			"de até um ano tem conta ativa em mais de 100 repositórios.",
 		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, args []string) error {
 			return runProfile(command, profile.NewRepo(runner), forge.NewCLI(commands), options)
@@ -165,10 +165,10 @@ func runAccountCommitCount(command *cobra.Command, repo *profile.Repo, source fo
 }
 
 // runAccountCommitCountByRepository é o --by-repo: a mesma fonte do
-// runAccountCommitCount, quebrada por repositório em vez de somada. O
-// domínio já recusa período maior que um ano e conta ativa em mais de 100
-// repositórios — nenhum dos dois cabe na consulta que o GitHub aceita, e o
-// erro vem de lá nomeado, não de um corte silencioso aqui.
+// runAccountCommitCount, quebrada por repositório em vez de somada — período
+// maior que um ano incluso, já que o domínio quebra em janelas e soma por
+// repositório sozinho. Só recusa quando alguma janela sozinha tem conta
+// ativa em mais de 100 repositórios, teto que o GitHub não deixa contornar.
 func runAccountCommitCountByRepository(command *cobra.Command, repo *profile.Repo, source forge.Source, options profileOptions, chosen rendering, since string, until string) error {
 	start, end := periodBounds(since, until)
 

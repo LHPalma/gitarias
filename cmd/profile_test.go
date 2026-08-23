@@ -524,6 +524,33 @@ func TestProfileByRepoPropagatesTheWriteFailure(t *testing.T) {
 	}
 }
 
+func TestProfileByRepoCoversAPeriodLongerThanAYear(t *testing.T) {
+	first := `{"data":{"viewer":{"contributionsCollection":{` +
+		`"totalRepositoriesWithContributedCommits":1,` +
+		`"commitContributionsByRepository":[{"repository":{"nameWithOwner":"LHPalma/gitarias","isPrivate":true},"contributions":{"totalCount":100}}]` +
+		`}}}}`
+	second := `{"data":{"viewer":{"contributionsCollection":{` +
+		`"totalRepositoriesWithContributedCommits":1,` +
+		`"commitContributionsByRepository":[{"repository":{"nameWithOwner":"LHPalma/gitarias","isPrivate":true},"contributions":{"totalCount":50}}]` +
+		`}}}}`
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+	outcomes := []exectest.Response{
+		{Result: exec.Result{Output: first}},
+		{Result: exec.Result{Output: second}},
+	}
+
+	result := executeWith(t, responses, outcomes,
+		"profile", "--commit-count", "--account", "--by-repo", "--since", "2024-01-01", "--until", "2025-06-15")
+
+	if result.err != nil {
+		t.Fatalf("período de mais de um ano tem de funcionar agora, não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "LHPalma/gitarias") || !strings.Contains(result.stdout, "150") {
+		t.Errorf("saída = %q, queria a soma das duas janelas: 150", result.stdout)
+	}
+}
+
 func TestProfileByRepoRejectsAnInvalidFormat(t *testing.T) {
 	result := executeWith(t, inARepository(), nil, "profile", "--commit-count", "--account", "--by-repo", "--format", "xml")
 
