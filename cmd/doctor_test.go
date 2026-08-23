@@ -218,7 +218,7 @@ func TestDoctorCountsOneFailureInTheSingular(t *testing.T) {
 }
 
 func TestDoctorWarnsWhenTheScratchDirectoryRefusesWrites(t *testing.T) {
-	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "nao-existe"))
+	t.Setenv(doctor.ScratchVariable(), filepath.Join(t.TempDir(), "nao-existe"))
 
 	result := diagnosingIn(t, healthyRepository(), gitFound(), "doctor")
 
@@ -228,7 +228,7 @@ func TestDoctorWarnsWhenTheScratchDirectoryRefusesWrites(t *testing.T) {
 	if !strings.Contains(result.stdout, "temporário") || !strings.Contains(result.stdout, "aviso") {
 		t.Errorf("saída = %q, queria o aviso do temporário", result.stdout)
 	}
-	if !strings.Contains(result.stdout, "TMPDIR") {
+	if !strings.Contains(result.stdout, doctor.ScratchVariable()) {
 		t.Errorf("saída = %q, queria a variável que muda o caminho", result.stdout)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/LHPalma/gitarias/internal/branch"
@@ -52,12 +53,26 @@ func (doctor *Doctor) scratch() Check {
 			Name:   "temporário",
 			State:  Warning,
 			Detail: os.TempDir() + ": " + reason(err),
-			Hint:   "só o gtr commits check precisa dele, para materializar a árvore de cada commit; aponte a variável TMPDIR para um diretório gravável e com espaço",
+			Hint:   "só o gtr commits check precisa dele, para materializar a árvore de cada commit; aponte a variável " + ScratchVariable() + " para um diretório gravável e com espaço",
 		}
 	}
 	defer os.RemoveAll(workspace)
 
 	return Check{Name: "temporário", State: Ok}
+}
+
+// ScratchVariable nomeia a variável que os.TempDir consulta nesta
+// plataforma — TMPDIR no Unix, TMP no Windows. Medido contra a stdlib: no
+// Windows ela lê TMP antes de TEMP e de %USERPROFILE%, e apontar TMPDIR lá
+// não muda nada, porque o Windows nunca olha essa variável. Exportada porque
+// quem simula a falha do temporário num teste, dentro ou fora deste pacote,
+// precisa saber qual variável forçar.
+func ScratchVariable() string {
+	if runtime.GOOS == "windows" {
+		return "TMP"
+	}
+
+	return "TMPDIR"
 }
 
 // reason devolve o motivo que o sistema operacional deu, sem o caminho que a

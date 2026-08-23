@@ -293,7 +293,7 @@ func TestDiagnoseLeavesNothingBehindInTheScratchDirectory(t *testing.T) {
 }
 
 func TestDiagnoseWarnsWhenTheScratchDirectoryRefusesWrites(t *testing.T) {
-	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "nao-existe"))
+	t.Setenv(ScratchVariable(), filepath.Join(t.TempDir(), "nao-existe"))
 
 	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Output: "git version 2.43.0"}})
 
@@ -305,7 +305,7 @@ func TestDiagnoseWarnsWhenTheScratchDirectoryRefusesWrites(t *testing.T) {
 	if !strings.Contains(check.Detail, "nao-existe") {
 		t.Errorf("detalhe = %q, queria o caminho que foi tentado", check.Detail)
 	}
-	if !strings.Contains(check.Hint, "TMPDIR") {
+	if !strings.Contains(check.Hint, ScratchVariable()) {
 		t.Errorf("dica = %q, queria a variavel que muda o caminho", check.Hint)
 	}
 }
