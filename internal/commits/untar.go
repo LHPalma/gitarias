@@ -38,7 +38,17 @@ func untar(archivePath string, destination string) error {
 	}
 }
 
+// resolve recusa uma entrada que aponta para fora do destino. O formato tar
+// grava caminho sempre com "/", qualquer que seja o host que escreveu o
+// arquivo — por isso a entrada crua é checada por esse prefixo antes de
+// filepath.Clean entrar em cena: IsAbs é da semântica do host que está
+// *lendo*, e num host Windows "/etc/passwd" não é absoluto para ele, mesmo
+// sendo a raiz para quem escreveu.
 func resolve(destination string, name string) (string, error) {
+	if strings.HasPrefix(name, "/") {
+		return "", fmt.Errorf("a entrada %q do arquivo aponta para fora do destino", name)
+	}
+
 	cleaned := filepath.Clean(name)
 
 	if filepath.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {

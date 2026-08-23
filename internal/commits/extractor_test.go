@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -92,7 +93,9 @@ func TestUntarRestoresTheTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("o script tinha de existir: %v", err)
 	}
-	if info.Mode().Perm()&0o111 == 0 {
+	// NTFS não tem bit de execução por arquivo — é o Unix que faz o comando
+	// de verificação rodar, e por isso a checagem só vale fora do Windows.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
 		t.Errorf("modo = %v, o bit de execucao e o que faz o comando de verificacao rodar", info.Mode())
 	}
 }
@@ -119,7 +122,14 @@ func TestUntarRestoresASymlink(t *testing.T) {
 
 	writeArchive(t, archivePath, []entry{{name: "atalho", kind: tar.TypeSymlink, linkname: "alvo.txt"}})
 
-	if err := untar(archivePath, destination); err != nil {
+	err := untar(archivePath, destination)
+	// Criar symlink no Windows exige um privilégio que a conta pode não ter
+	// (Modo Desenvolvedor desligado, sem admin) — é limitação do ambiente,
+	// não do código, e o próprio Go pula testes de symlink por isso.
+	if runtime.GOOS == "windows" && err != nil && strings.Contains(err.Error(), "required privilege") {
+		t.Skip("esta conta nao tem privilegio para criar symlink no Windows")
+	}
+	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
 
