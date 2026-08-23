@@ -3,12 +3,12 @@
 CLI de utilitários git em binário único. O binário chama `gtr`.
 
 O que a ferramenta faz é orquestrar o `git` que já está na sua máquina.
-**Nenhum comando sai da máquina sem dizer que sai** — hoje `gtr pr` e
-`gtr doctor --online` saem falando com o GitHub através do `gh`, e
-`gtr riff` e `gtr fire` saem falando HTTP puro com uma API pública
-(`whatthecommit.com`), sem chave nem token. Os quatro anunciam isso no
-`--help`. Nem os dois primeiros pedem token: quem fala com o GitHub é o `gh`,
-e o `gtr` nunca vê a sua credencial.
+**Nenhum comando sai da máquina sem dizer que sai** — hoje `gtr pr`,
+`gtr doctor --online` e `gtr profile --account` saem falando com o GitHub
+através do `gh`, e `gtr riff` e `gtr fire` saem falando HTTP puro com uma
+API pública (`whatthecommit.com`), sem chave nem token. Todos anunciam isso
+no `--help`. Nem os três primeiros pedem token: quem fala com o GitHub é o
+`gh`, e o `gtr` nunca vê a sua credencial.
 
 ## Instalação
 
@@ -692,13 +692,14 @@ não é erro: `Nenhum commit encontrado.`
 
 ### `gtr profile`
 
-Métricas sobre a **sua própria** identidade de git neste repositório —
-diferente do `gtr stats`, que conta todo mundo. Cada métrica é uma flag
-própria; hoje só existe uma:
+Métricas sobre a **sua própria** identidade de git — diferente do
+`gtr stats`, que conta todo mundo. Cada métrica é uma flag própria; hoje só
+existe uma:
 
 | Flag | Padrão | Efeito |
 |---|---|---|
 | `--commit-count` | `false` | A métrica: quantos commits seus caem no período. Obrigatória — sem ela, o comando recusa |
+| `--account` | `false` | Conta em toda a conta do GitHub, não só neste repositório; **faz chamada de rede** |
 | `--since <data>` | hoje | Início do período, `AAAA-MM-DD`. Sem `--until`, vai até hoje |
 | `--until <data>` | hoje | Fim do período, `AAAA-MM-DD`. Sem `--since`, começa hoje |
 
@@ -731,7 +732,38 @@ hora corrente de agora, naquele dia —, e `--since` igual a `--until` dava
 por baixo, `--since` vira `<data> 00:00:00` e `--until` vira
 `<data> 23:59:59`, sempre.
 
-É leitura local, sem rede — só `git log` e `git config`.
+**Por padrão é leitura local, sem rede** — só `git log` e `git config`.
+
+**Com `--account`, conta em toda a conta do GitHub, não só neste
+repositório.** Sai da máquina, pelo `gh` — a soma vem de
+`contributionsCollection`, a mesma que alimenta a atividade da sua conta:
+
+```
+$ gtr profile --commit-count --account --since 2026-08-01
+254 commits entre 2026-08-01 e 2026-08-23.
+```
+
+**A soma vale o que o token consegue ler.** Sem o escopo `read:user`, o
+GitHub omite contribuições de repositório privado da conta — caladas, sem
+erro para distinguir "poucos commits mesmo" de "faltou permissão". Confira
+com `gtr doctor --online`.
+
+**Termina avisando o que ainda não chegou ao GitHub.** A soma da conta só
+enxerga o que já foi enviado; commits deste repositório à frente do upstream
+não entram nela:
+
+```
+$ gtr profile --commit-count --account
+42 commits entre 2026-08-23 e 2026-08-23.
+3 commits deste repositório ainda são só locais, fora dessa contagem.
+```
+
+Sem upstream configurado na branch atual, o aviso fica de fora — não dá para
+comparar contra nada.
+
+O período pode passar de um ano: a API do GitHub só aceita janelas de até um
+ano por consulta, e o `gtr` quebra o período pedido nessas janelas e soma o
+resultado.
 
 ### `gtr setup`
 
@@ -1309,11 +1341,11 @@ Estas não são configurações — são propriedades do código:
   repositório é o do diretório atual. Nenhum token passa pelo `gtr`, nem por
   variável de ambiente, nem por `argv`.
 - **Nunca sai da máquina sem dizer.** `gtr pr`, `gtr doctor --online`,
-  `gtr riff` e `gtr fire` fazem requisição de rede, e os quatro declaram isso
-  no `--help`. Os dois primeiros falam com o GitHub através do `gh`; os dois
-  últimos falam HTTP puro com uma API pública, sem chave e sem token. O
-  `doctor` sem a flag, e todo o resto, é local — é isso que o torna barato de
-  rodar por curiosidade.
+  `gtr profile --account`, `gtr riff` e `gtr fire` fazem requisição de rede,
+  e todos declaram isso no `--help`. Os três primeiros falam com o GitHub
+  através do `gh`; os dois últimos falam HTTP puro com uma API pública, sem
+  chave e sem token. O `doctor` sem a flag, o `profile` sem a flag, e todo o
+  resto, é local — é isso que o torna barato de rodar por curiosidade.
 - **Nunca instala nada.** O `gtr setup` imprime o comando de instalação da sua
   máquina; quem executa é você. Um binário que pede senha de root para agir
   sozinho é um hábito que não vale ensinar.
