@@ -7,18 +7,34 @@ import (
 	"github.com/LHPalma/gitarias/internal/worktree"
 )
 
-func TestFindWorktreeMatchesAbsolutePath(t *testing.T) {
-	worktrees := []worktree.Worktree{
-		{Path: "/repo"},
-		{Path: "/repo-fix"},
+// absolute existe porque "/repo-fix" só é absoluto por si mesmo no Unix; no
+// Windows filepath.Abs completa com o drive atual, e comparar contra o
+// literal quebraria ali. Passar os dois lados — o fixture e o que se pede a
+// findWorktree — pela mesma conversão deixa o teste válido em qualquer SO,
+// sem assumir a forma que "absoluto" toma aqui.
+func absolute(t *testing.T, path string) string {
+	t.Helper()
+
+	resolved, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("não consegui resolver %q: %v", path, err)
 	}
 
-	found, err := findWorktree(worktrees, "/repo-fix")
+	return resolved
+}
+
+func TestFindWorktreeMatchesAbsolutePath(t *testing.T) {
+	repo := absolute(t, "/repo")
+	fix := absolute(t, "/repo-fix")
+
+	worktrees := []worktree.Worktree{{Path: repo}, {Path: fix}}
+
+	found, err := findWorktree(worktrees, fix)
 	if err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
-	if found.Path != "/repo-fix" {
-		t.Errorf("veio %q, queria /repo-fix", found.Path)
+	if found.Path != fix {
+		t.Errorf("veio %q, queria %q", found.Path, fix)
 	}
 }
 

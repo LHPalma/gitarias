@@ -327,18 +327,19 @@ func TestWorktreesCommandPropagatesListFailure(t *testing.T) {
 }
 
 func TestWorktreesRemoveListsIgnoredFilesAndAsks(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},
 		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
-			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
 		"rev-parse --show-toplevel": {Output: "/repo"},
-		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+		"-C " + fix + " ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
 			Output: ".env\x00node_modules/\x00",
 		},
-		"worktree remove /repo-fix": {Output: ""},
+		"worktree remove " + fix: {Output: ""},
 	}
 
-	result := execute(t, responses, "y\n", "worktrees", "remove", "/repo-fix")
+	result := execute(t, responses, "y\n", "worktrees", "remove", fix)
 
 	if result.err != nil {
 		t.Fatalf("não esperava erro, veio %v", result.err)
@@ -349,7 +350,7 @@ func TestWorktreesRemoveListsIgnoredFilesAndAsks(t *testing.T) {
 	if !strings.Contains(result.stdout, ".env") || !strings.Contains(result.stdout, "node_modules/") {
 		t.Errorf("saída = %q, queria os dois arquivos listados", result.stdout)
 	}
-	if !strings.Contains(result.stdout, "Remover /repo-fix? [y/N] ") {
+	if !strings.Contains(result.stdout, "Remover "+fix+"? [y/N] ") {
 		t.Errorf("saída = %q, queria a pergunta de confirmação", result.stdout)
 	}
 	if !strings.Contains(result.stdout, "Pronto.") {
@@ -358,7 +359,7 @@ func TestWorktreesRemoveListsIgnoredFilesAndAsks(t *testing.T) {
 
 	var removed bool
 	for _, call := range result.calls {
-		if call == "worktree remove /repo-fix" {
+		if call == "worktree remove "+fix {
 			removed = true
 		}
 	}
@@ -368,17 +369,18 @@ func TestWorktreesRemoveListsIgnoredFilesAndAsks(t *testing.T) {
 }
 
 func TestWorktreesRemoveSingularMessage(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},
 		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
-			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
 		"rev-parse --show-toplevel": {Output: "/repo"},
-		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+		"-C " + fix + " ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
 			Output: ".env\x00",
 		},
 	}
 
-	result := execute(t, responses, "n\n", "worktrees", "remove", "/repo-fix")
+	result := execute(t, responses, "n\n", "worktrees", "remove", fix)
 
 	if result.err != nil {
 		t.Fatalf("não esperava erro, veio %v", result.err)
@@ -389,35 +391,37 @@ func TestWorktreesRemoveSingularMessage(t *testing.T) {
 }
 
 func TestWorktreesRemoveWithoutIgnoredFiles(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},
 		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
-			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
 		"rev-parse --show-toplevel": {Output: "/repo"},
-		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {Output: ""},
-		"worktree remove /repo-fix": {Output: ""},
+		"-C " + fix + " ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {Output: ""},
+		"worktree remove " + fix: {Output: ""},
 	}
 
-	result := execute(t, responses, "y\n", "worktrees", "remove", "/repo-fix")
+	result := execute(t, responses, "y\n", "worktrees", "remove", fix)
 
 	if result.err != nil {
 		t.Fatalf("não esperava erro, veio %v", result.err)
 	}
-	if !strings.Contains(result.stdout, "/repo-fix não tem arquivo ignorado a perder.") {
+	if !strings.Contains(result.stdout, fix+" não tem arquivo ignorado a perder.") {
 		t.Errorf("saída = %q, queria a mensagem de nada a perder", result.stdout)
 	}
 }
 
 func TestWorktreesRemoveCancelledNeverCallsGit(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},
 		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
-			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
 		"rev-parse --show-toplevel": {Output: "/repo"},
-		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {Output: ".env\x00"},
+		"-C " + fix + " ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {Output: ".env\x00"},
 	}
 
-	result := execute(t, responses, "\n", "worktrees", "remove", "/repo-fix")
+	result := execute(t, responses, "\n", "worktrees", "remove", fix)
 
 	if result.err != nil {
 		t.Fatalf("não esperava erro, veio %v", result.err)
@@ -453,16 +457,17 @@ func TestWorktreesRemoveRejectsPathThatIsNotAWorktree(t *testing.T) {
 }
 
 func TestWorktreesRemovePropagatesGitRefusal(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},
 		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
-			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
 		"rev-parse --show-toplevel": {Output: "/repo"},
-		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {Output: ""},
-		"worktree remove /repo-fix": {Err: errors.New("fatal: contains modified or untracked files, use --force to delete it")},
+		"-C " + fix + " ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {Output: ""},
+		"worktree remove " + fix: {Err: errors.New("fatal: contains modified or untracked files, use --force to delete it")},
 	}
 
-	result := execute(t, responses, "y\n", "worktrees", "remove", "/repo-fix")
+	result := execute(t, responses, "y\n", "worktrees", "remove", fix)
 
 	if result.err == nil {
 		t.Fatal("esperava erro, veio nil")
@@ -473,17 +478,18 @@ func TestWorktreesRemovePropagatesGitRefusal(t *testing.T) {
 }
 
 func TestWorktreesRemovePropagatesIgnoredFilesFailure(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},
 		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
-			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
 		"rev-parse --show-toplevel": {Output: "/repo"},
-		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+		"-C " + fix + " ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
 			Err: errNotARepository,
 		},
 	}
 
-	result := execute(t, responses, "", "worktrees", "remove", "/repo-fix")
+	result := execute(t, responses, "", "worktrees", "remove", fix)
 
 	if result.err == nil {
 		t.Fatal("esperava erro, veio nil")
@@ -509,12 +515,13 @@ func TestWorktreesRemovePropagatesListFailure(t *testing.T) {
 }
 
 func TestWorktreesRemovePropagatesWriteFailure(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},
 		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
-			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
 		"rev-parse --show-toplevel": {Output: "/repo"},
-		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+		"-C " + fix + " ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
 			Output: ".env\x00",
 		},
 	}
@@ -522,7 +529,7 @@ func TestWorktreesRemovePropagatesWriteFailure(t *testing.T) {
 	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
 	command.SetOut(brokenWriter{})
 	command.SetErr(&bytes.Buffer{})
-	command.SetArgs([]string{"worktrees", "remove", "/repo-fix"})
+	command.SetArgs([]string{"worktrees", "remove", fix})
 
 	if command.Execute() == nil {
 		t.Fatal("falha de escrita tem de virar erro")
@@ -530,12 +537,13 @@ func TestWorktreesRemovePropagatesWriteFailure(t *testing.T) {
 }
 
 func TestWorktreesRemovePropagatesReadFailure(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},
 		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
-			"worktree /repo-fix\nHEAD def\nbranch refs/heads/fix\n"},
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
 		"rev-parse --show-toplevel": {Output: "/repo"},
-		"-C /repo-fix ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
+		"-C " + fix + " ls-files --others --ignored --exclude-standard --directory --no-empty-directory -z": {
 			Output: "",
 		},
 	}
@@ -544,7 +552,7 @@ func TestWorktreesRemovePropagatesReadFailure(t *testing.T) {
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetIn(brokenReader{})
-	command.SetArgs([]string{"worktrees", "remove", "/repo-fix"})
+	command.SetArgs([]string{"worktrees", "remove", fix})
 
 	if command.Execute() == nil {
 		t.Fatal("falha na leitura da confirmação tem de virar erro")
