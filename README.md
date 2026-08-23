@@ -791,12 +791,14 @@ sozinho: quebra em janelas de até um ano e soma por `repositório` — o mesmo
 repositório que aparece em janelas diferentes vira uma linha só, com as
 contagens somadas.
 
-**O teto é por repositório ativo dentro de cada janela, não por período.**
-O GitHub não oferece cursor para essa consulta — só um teto de 100
-repositórios por página —, então, se a conta esteve ativa em mais de 100
-repositórios **dentro de alguma janela de um ano**, `--by-repo` recusa com
-erro nomeando a janela em vez de trazer a lista cortada calada. Períodos
-mais curtos, ou uma conta com menos repositórios ativos, não esbarram nisso.
+**Quando uma janela vem cortada, o `gtr` a divide ao meio e tenta cada
+metade de novo, em vez de recusar de cara.** O GitHub não oferece cursor
+para essa consulta — só um teto de 100 repositórios por página —, e ao meio
+de um ano de atividade isso pode passar. A bisecção continua até caber ou
+até a janela chegar a uma hora; só se **nem numa janela de uma hora** couber
+é que `--by-repo` desiste e recusa, nomeando a janela e o total real de
+repositórios contribuídos nela. Na prática isso nunca acontece — cem
+repositórios ativos numa única hora não é padrão de uso de pessoa.
 
 ### `gtr setup`
 
