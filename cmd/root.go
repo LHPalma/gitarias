@@ -28,6 +28,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, client web.Client, find
 	command.AddCommand(newChangelogCommand(runner))
 	command.AddCommand(newChurnCommand(runner))
 	command.AddCommand(newCommitsCommand(runner, commands))
+	command.AddCommand(newDiffCommand(runner))
 	command.AddCommand(newDoctorCommand(runner, commands))
 	command.AddCommand(newFavoriteBandCommand())
 	command.AddCommand(newFireCommand(runner, client))
