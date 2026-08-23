@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LHPalma/gitarias/internal/forge"
 )
@@ -26,6 +27,10 @@ func (source answers) Viewer(context.Context) (string, error) {
 
 func (source answers) Scopes(context.Context) ([]string, error) {
 	return source.scopes, source.err
+}
+
+func (source answers) AccountCommitCount(context.Context, time.Time, time.Time) (int, error) {
+	return 0, source.err
 }
 
 func TestConnectedNamesWhoTheGitHubAccepted(t *testing.T) {

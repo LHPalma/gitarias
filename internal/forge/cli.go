@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LHPalma/gitarias/internal/exec"
 )
@@ -171,4 +172,81 @@ func scopesFrom(output string) []string {
 	}
 
 	return nil
+}
+
+// contributionsQuery pede só o total de commits contribuídos — nada de nome
+// de repositório ou detalhe por fonte. É a mesma conta que a atividade do
+// GitHub mostra à própria conta, incluindo o que é privado quando o token
+// carrega o escopo read:user; sem esse escopo, o GitHub omite o privado da
+// soma, calado, sem erro para distinguir os dois casos.
+const contributionsQuery = `query($from: DateTime!, $to: DateTime!) {
+  viewer {
+    contributionsCollection(from: $from, to: $to) {
+      totalCommitContributions
+    }
+  }
+}`
+
+// yearWindow é o teto que o contributionsCollection do GitHub aceita numa
+// única consulta.
+const yearWindow = 365 * 24 * time.Hour
+
+// AccountCommitCount conta os commits que a conta autenticada contribuiu, em
+// todos os repositórios que ela alcança, entre since e until — os dois
+// inclusos. Quem resolve "conta autenticada" é o próprio gh, nunca um login
+// escolhido aqui, mesma disciplina do Viewer.
+//
+// O período pode passar de um ano; a API não aceita isso numa consulta só, e
+// por isso é quebrado em janelas de até um ano e somado aqui.
+func (source *CLI) AccountCommitCount(ctx context.Context, since time.Time, until time.Time) (int, error) {
+	total := 0
+
+	for start := since; !start.After(until); start = start.Add(yearWindow) {
+		end := start.Add(yearWindow)
+		if end.After(until) {
+			end = until
+		}
+
+		count, err := source.commitContributions(ctx, start, end)
+		if err != nil {
+			return 0, err
+		}
+
+		total += count
+	}
+
+	return total, nil
+}
+
+func (source *CLI) commitContributions(ctx context.Context, from time.Time, to time.Time) (int, error) {
+	result, err := source.commands.Run(ctx, "", "gh", "api", "graphql",
+		"-f", "query="+contributionsQuery,
+		"-f", "from="+from.Format(time.RFC3339),
+		"-f", "to="+to.Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, ErrUnavailable
+	}
+
+	if result.Code == unauthenticated {
+		return 0, ErrUnauthenticated
+	}
+	if !result.Passed() {
+		return 0, fmt.Errorf("o gh não conseguiu contar as contribuições: %s", strings.TrimSpace(result.Output))
+	}
+
+	var response struct {
+		Data struct {
+			Viewer struct {
+				ContributionsCollection struct {
+					TotalCommitContributions int `json:"totalCommitContributions"`
+				} `json:"contributionsCollection"`
+			} `json:"viewer"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(result.Output), &response); err != nil {
+		return 0, fmt.Errorf("não entendi a resposta do gh: %w", err)
+	}
+
+	return response.Data.Viewer.ContributionsCollection.TotalCommitContributions, nil
 }

@@ -181,3 +181,68 @@ func TestEnsureAcceptsARepository(t *testing.T) {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
 }
+
+const unpushedCall = "rev-list --count @{u}..HEAD"
+
+func TestUnpushedCountsWhatIsAheadOfTheUpstream(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{unpushedCall: {Output: "3\n"}})
+
+	count, hasUpstream, err := NewRepo(runner).Unpushed(t.Context())
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if !hasUpstream {
+		t.Error("hasUpstream = false, o upstream respondeu")
+	}
+	if count != 3 {
+		t.Errorf("contagem = %d, queria 3", count)
+	}
+}
+
+func TestUnpushedIsZeroUpToDateWithTheUpstream(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{unpushedCall: {Output: "0"}})
+
+	count, hasUpstream, err := NewRepo(runner).Unpushed(t.Context())
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if !hasUpstream {
+		t.Error("hasUpstream = false, o upstream respondeu")
+	}
+	if count != 0 {
+		t.Errorf("contagem = %d, queria 0", count)
+	}
+}
+
+func TestUnpushedWithoutAnUpstreamConfigured(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		unpushedCall: {Err: &git.ExitError{Code: 128, Message: "fatal: no upstream configured for branch 'feat'"}},
+	})
+
+	count, hasUpstream, err := NewRepo(runner).Unpushed(t.Context())
+	if err != nil {
+		t.Fatalf("branch sem upstream não é erro, veio %v", err)
+	}
+	if hasUpstream {
+		t.Error("hasUpstream = true; não há upstream nenhum para comparar")
+	}
+	if count != 0 {
+		t.Errorf("contagem = %d, sem upstream não há o que contar", count)
+	}
+}
+
+func TestUnpushedPropagatesARealFailure(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{unpushedCall: {Err: errNotARepository}})
+
+	if _, _, err := NewRepo(runner).Unpushed(t.Context()); err == nil {
+		t.Fatal("falha real (não a ausência de upstream) tem de virar erro")
+	}
+}
+
+func TestUnpushedRejectsAnUnreadableCount(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{unpushedCall: {Output: "não é um número"}})
+
+	if _, _, err := NewRepo(runner).Unpushed(t.Context()); err == nil {
+		t.Fatal("contagem ilegível tem de virar erro, não zero silencioso")
+	}
+}

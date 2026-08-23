@@ -1,6 +1,9 @@
 package forge
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Source é de onde os pull requests vêm. Existe como contrato porque há dois
 // caminhos previstos: embrulhar o gh, que já resolve autenticação e host, e
@@ -9,4 +12,5 @@ type Source interface {
 	PullRequests(ctx context.Context, limit int) ([]PullRequest, error)
 	Viewer(ctx context.Context) (string, error)
 	Scopes(ctx context.Context) ([]string, error)
+	AccountCommitCount(ctx context.Context, since time.Time, until time.Time) (int, error)
 }

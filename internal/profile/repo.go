@@ -86,6 +86,29 @@ func (repo *Repo) CommitCount(ctx context.Context, identity string, since string
 	return count, nil
 }
 
+// Unpushed conta quantos commits do HEAD atual ainda não chegaram ao
+// upstream configurado — @{u}. hasUpstream vem falso, sem erro, quando a
+// branch atual não tem upstream: é o estado normal de uma branch nova, e
+// quem chama precisa distinguir isso de "não dá para saber".
+func (repo *Repo) Unpushed(ctx context.Context) (int, bool, error) {
+	output, err := repo.runner.Run(ctx, "rev-list", "--count", "@{u}..HEAD")
+	if err != nil {
+		var exitError *git.ExitError
+		if errors.As(err, &exitError) && strings.Contains(exitError.Message, "no upstream") {
+			return 0, false, nil
+		}
+
+		return 0, false, err
+	}
+
+	count, err := strconv.Atoi(strings.TrimSpace(output))
+	if err != nil {
+		return 0, false, fmt.Errorf("rev-list devolveu uma contagem ilegível: %q", output)
+	}
+
+	return count, true, nil
+}
+
 func (repo *Repo) empty(ctx context.Context) (bool, error) {
 	_, err := repo.runner.Run(ctx, "rev-parse", "--verify", "--quiet", "HEAD")
 	if err == nil {

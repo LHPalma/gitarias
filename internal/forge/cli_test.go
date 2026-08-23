@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LHPalma/gitarias/internal/exec"
 	"github.com/LHPalma/gitarias/internal/exec/exectest"
@@ -315,5 +316,161 @@ func TestScopesSeparatesHavingNoCredentialFromBeingRefused(t *testing.T) {
 				t.Errorf("erro = %v; ha credencial, ela e que foi recusada", err)
 			}
 		})
+	}
+}
+
+const contributed = `{"data":{"viewer":{"contributionsCollection":{"totalCommitContributions":42}}}}`
+
+func aDay(t *testing.T, date string) time.Time {
+	t.Helper()
+
+	parsed, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		t.Fatalf("data de teste invalida: %v", err)
+	}
+
+	return parsed
+}
+
+func TestAccountCommitCountReadsTheTotal(t *testing.T) {
+	since, until := aDay(t, "2026-08-01"), aDay(t, "2026-08-23")
+
+	count, err := NewCLI(answering(contributed)).AccountCommitCount(t.Context(), since, until)
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if count != 42 {
+		t.Errorf("contagem = %d, queria a do gh", count)
+	}
+}
+
+func TestAccountCommitCountAsksGraphqlWithTheDates(t *testing.T) {
+	since, until := aDay(t, "2026-08-01"), aDay(t, "2026-08-23")
+	commands := answering(contributed)
+
+	NewCLI(commands).AccountCommitCount(t.Context(), since, until)
+
+	call := strings.Join(commands.Calls[0].Args, " ")
+	if !strings.Contains(call, "api graphql") {
+		t.Errorf("chamada = %q, queria a rota graphql", call)
+	}
+	if !strings.Contains(call, "from="+since.Format(time.RFC3339)) {
+		t.Errorf("chamada = %q, queria o since formatado", call)
+	}
+	if !strings.Contains(call, "to="+until.Format(time.RFC3339)) {
+		t.Errorf("chamada = %q, queria o until formatado", call)
+	}
+	if !strings.Contains(call, "totalCommitContributions") {
+		t.Errorf("chamada = %q, queria a query pedindo o total", call)
+	}
+}
+
+func TestAccountCommitCountAsksTheViewerNeverAnArbitraryLogin(t *testing.T) {
+	commands := answering(contributed)
+
+	NewCLI(commands).AccountCommitCount(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	call := strings.Join(commands.Calls[0].Args, " ")
+	if !strings.Contains(call, "viewer") {
+		t.Errorf("chamada = %q; quem autentica o gh decide quem somos, nao um login escolhido aqui", call)
+	}
+}
+
+func TestAccountCommitCountSplitsAPeriodLongerThanAYear(t *testing.T) {
+	since, until := aDay(t, "2024-01-01"), aDay(t, "2025-06-15")
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: `{"data":{"viewer":{"contributionsCollection":{"totalCommitContributions":10}}}}`}},
+		exectest.Response{Result: exec.Result{Output: `{"data":{"viewer":{"contributionsCollection":{"totalCommitContributions":7}}}}`}},
+	)
+
+	count, err := NewCLI(commands).AccountCommitCount(t.Context(), since, until)
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if len(commands.Calls) != 2 {
+		t.Fatalf("chamadas = %d, o periodo passa de um ano e a api nao aceita isso numa consulta so", len(commands.Calls))
+	}
+	if count != 17 {
+		t.Errorf("contagem = %d, queria a soma das duas janelas", count)
+	}
+}
+
+func TestAccountCommitCountNeverAsksAWindowPastUntil(t *testing.T) {
+	since, until := aDay(t, "2024-01-01"), aDay(t, "2025-06-15")
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: `{"data":{"viewer":{"contributionsCollection":{"totalCommitContributions":10}}}}`}},
+		exectest.Response{Result: exec.Result{Output: `{"data":{"viewer":{"contributionsCollection":{"totalCommitContributions":7}}}}`}},
+	)
+
+	NewCLI(commands).AccountCommitCount(t.Context(), since, until)
+
+	last := strings.Join(commands.Calls[len(commands.Calls)-1].Args, " ")
+	if !strings.Contains(last, "to="+until.Format(time.RFC3339)) {
+		t.Errorf("ultima chamada = %q; a ultima janela tem de parar em until, nunca passar dele", last)
+	}
+}
+
+func TestAccountCommitCountSaysWhenTheGhIsNotThere(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{Err: errors.New("executable file not found in $PATH")})
+
+	_, err := NewCLI(commands).AccountCommitCount(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if !errors.Is(err, ErrUnavailable) {
+		t.Errorf("erro = %v, queria a ausencia do gh", err)
+	}
+}
+
+func TestAccountCommitCountSeparatesHavingNoCredentialFromBeingRefused(t *testing.T) {
+	tests := []struct {
+		name   string
+		result exec.Result
+		want   error
+	}{
+		{
+			name:   "sem credencial nenhuma",
+			result: exec.Result{Code: 4, Output: "To get started with GitHub CLI, please run: gh auth login"},
+			want:   ErrUnauthenticated,
+		},
+		{
+			name:   "servidor recusou",
+			result: exec.Result{Code: 1, Output: "gh: Bad credentials (HTTP 401)"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			commands := exectest.NewRunner(exectest.Response{Result: test.result})
+
+			_, err := NewCLI(commands).AccountCommitCount(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+			if err == nil {
+				t.Fatal("os dois casos sao erro")
+			}
+			if test.want != nil && !errors.Is(err, test.want) {
+				t.Errorf("erro = %v, queria %v", err, test.want)
+			}
+			if test.want == nil && errors.Is(err, ErrUnauthenticated) {
+				t.Errorf("erro = %v; ha credencial, ela e que foi recusada", err)
+			}
+		})
+	}
+}
+
+func TestAccountCommitCountRefusesAnAnswerItCannotRead(t *testing.T) {
+	_, err := NewCLI(answering("isto nao e json")).AccountCommitCount(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if err == nil {
+		t.Fatal("resposta ilegivel tem de virar erro")
+	}
+}
+
+func TestAccountCommitCountHonoursCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if _, err := NewCLI(answering(contributed)).AccountCommitCount(ctx, aDay(t, "2026-08-01"), aDay(t, "2026-08-23")); err == nil {
+		t.Fatal("contexto cancelado tem de parar a chamada")
 	}
 }
