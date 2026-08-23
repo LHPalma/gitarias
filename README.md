@@ -361,7 +361,7 @@ $ gtr doctor
 
 | Flag | Padrão | Efeito |
 |---|---|---|
-| `--online` | `false` | Acrescenta a checagem de conexão com o GitHub; **faz chamada de rede** |
+| `--online` | `false` | Acrescenta as checagens de conexão e de escopo com o GitHub; **faz chamada de rede** |
 | `--strict` | `false` | Trata aviso como falha, para quem roda o `doctor` num portão de CI |
 | `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
 | `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
@@ -411,24 +411,38 @@ $ gtr doctor
                       só é preciso para os comandos de PR; o resto do gtr funciona sem ele. Instale em https://cli.github.com
 ```
 
-**Com `--online`, pergunta ao GitHub quem você é.** Guitarra desplugada toca
-sozinha; plugada precisa do cabo — daí o apelido `--plugged` valer pela flag. É a única checagem que sai
-da máquina, e por isso é flag e não padrão — o resto do `doctor` é local e
-termina sozinho, o que o torna barato de rodar por curiosidade.
+**Com `--online`, pergunta ao GitHub quem você é e o que o token autoriza.**
+Guitarra desplugada toca sozinha; plugada precisa do cabo — daí o apelido
+`--plugged` valer pela flag. São as únicas checagens que saem da máquina, e
+por isso são flag e não padrão — o resto do `doctor` é local e termina
+sozinho, o que o torna barato de rodar por curiosidade.
 
 ```
 $ gtr doctor --online
   ...
   ok     conexão      LHPalma
+  ok     escopo       read:user presente
 
 $ gtr doctor --online        # sem credencial
   falta  conexão      sem credencial para o GitHub
                       entre com gh auth login, ou exporte GH_TOKEN com um token de acesso
+  --     escopo       depende de credencial, que não há
 ```
 
-O que ela afirma é estreito de propósito: que existe credencial e que o
+O que a conexão afirma é estreito de propósito: que existe credencial e que o
 servidor a aceitou. **Não afirma que o token é válido** — um proxy que
 reautentica no caminho responde igual, e o `doctor` não afirma o que não mediu.
+
+**O escopo é aviso, não falha.** `read:user` não é preciso por nenhum comando
+de hoje — é o que a leitura de contribuições privadas do próprio usuário pela
+API do GitHub vai exigir —, então a ausência não impede nada que já funciona:
+
+```
+$ gtr doctor --online        # token sem read:user
+  ok     conexão      LHPalma
+  aviso  escopo       falta read:user
+                      rode gh auth refresh -h github.com -s read:user para acrescentá-lo ao token
+```
 
 No `json` o `state` é token — `ok`, `warning`, `failure`, `skipped` —, e no
 `csv` é o rótulo de tela.
