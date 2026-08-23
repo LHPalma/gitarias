@@ -1,6 +1,7 @@
 package format
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -150,6 +151,37 @@ func TestPathSuggestsTheNameOfTheCommandThatAsked(t *testing.T) {
 func TestPathRefusesTheEmptyPath(t *testing.T) {
 	if _, err := CSV.Path("", "ignorados"); err == nil {
 		t.Fatal("caminho vazio nao nomeia arquivo nenhum")
+	}
+}
+
+func TestPathNamesTheDirectoryWithLiteralQuotes(t *testing.T) {
+	_, err := CSV.Path("saida/", "ignorados")
+	if err == nil {
+		t.Fatal("caminho terminado em separador nomeia diretorio, nao arquivo")
+	}
+	if !strings.Contains(err.Error(), `"saida/"`) {
+		t.Errorf("erro = %v, queria o caminho entre aspas", err)
+	}
+}
+
+// TestPathNeverDoublesTheWindowsSeparatorInTheMessage só roda no Windows
+// porque só lá a barra invertida é separador — em outro SO o "\" nem
+// dispara o ramo de "termina em separador". %q escaparia a barra como \\,
+// e a mensagem passaria a citar um caminho que não existe.
+func TestPathNeverDoublesTheWindowsSeparatorInTheMessage(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("barra invertida so e separador de caminho no Windows")
+	}
+
+	_, err := CSV.Path(`saida\`, "ignorados")
+	if err == nil {
+		t.Fatal("caminho terminado em separador nomeia diretorio, nao arquivo")
+	}
+	if strings.Contains(err.Error(), `\\`) {
+		t.Errorf("erro = %v; %%q dobraria a barra invertida, e o caminho pareceria nao existir", err)
+	}
+	if !strings.Contains(err.Error(), `"saida\"`) {
+		t.Errorf("erro = %v, queria o caminho intacto entre aspas", err)
 	}
 }
 

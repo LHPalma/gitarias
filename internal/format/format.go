@@ -51,7 +51,9 @@ func (chosen Format) PathWithExtension(path string, name string, extension strin
 	}
 
 	if os.IsPathSeparator(path[len(path)-1]) {
-		return "", fmt.Errorf("%q nomeia um diretório; informe o caminho do arquivo, como %q",
+		// Aspas literais, não %q: %q escapa a barra invertida do Windows
+		// como \\, e a mensagem passaria a citar um caminho que não existe.
+		return "", fmt.Errorf("\"%s\" nomeia um diretório; informe o caminho do arquivo, como \"%s\"",
 			path, path+name+extension)
 	}
 
