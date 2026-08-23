@@ -296,33 +296,24 @@ const repositoryContributionsQuery = `query($from: DateTime!, $to: DateTime!) {
   }
 }`
 
+// minSplit é o menor pedaço que a bisecção tenta antes de desistir e nomear
+// o corte. Cem repositórios ativos dentro de uma janela mais estreita que
+// isso é um padrão de uso que o gtr não tenta mais adivinhar — a essa altura
+// é sinal de algo automatizado, não de uma pessoa commitando.
+const minSplit = time.Hour
+
 // AccountCommitCountByRepository quebra AccountCommitCount por repositório,
 // entre since e until — os dois inclusos. Igual a AccountCommitCount, um
 // período maior que um ano é quebrado em janelas — mas aqui isso não basta:
 // o mesmo repositório pode aparecer em janelas diferentes, e quem chama quer
 // uma linha por repositório, não uma por repositório-e-janela. Por isso as
 // janelas se somam por nameWithOwner aqui dentro, antes de devolver.
-//
-// Quando alguma janela sozinha já contribuiu em mais repositórios do que o
-// teto por consulta, essa janela viria cortada calada — GitHub ordena por
-// contribuição e trunca. Em vez disso o erro nomeia a janela e o corte:
-// RN-04 do profile já cobrava isso do CommitCount local (contagem ilegível é
-// erro, não zero silencioso), e aqui o mesmo vale para "cortada".
 func (source *CLI) AccountCommitCountByRepository(ctx context.Context, since time.Time, until time.Time) ([]RepositoryCommitCount, error) {
 	totals := make(map[string]RepositoryCommitCount)
 
 	for _, piece := range windows(since, until) {
-		counts, err := source.repositoryContributions(ctx, piece.from, piece.until)
-		if err != nil {
+		if err := source.mergeRepositoryContributions(ctx, piece.from, piece.until, totals); err != nil {
 			return nil, err
-		}
-
-		for _, count := range counts {
-			merged := totals[count.Repository]
-			merged.Repository = count.Repository
-			merged.Private = count.Private
-			merged.Count += count.Count
-			totals[count.Repository] = merged
 		}
 	}
 
@@ -342,21 +333,71 @@ func (source *CLI) AccountCommitCountByRepository(ctx context.Context, since tim
 	return counts, nil
 }
 
-func (source *CLI) repositoryContributions(ctx context.Context, from time.Time, until time.Time) ([]RepositoryCommitCount, error) {
+// mergeRepositoryContributions busca uma janela e soma o que achou em
+// totals. Quando a janela vem cortada — mais repositórios ativos do que o
+// teto por consulta —, a resposta não é confiável sozinha: GitHub ordena por
+// contribuição e trunca o resto calado. Em vez de aceitar isso ou desistir
+// na hora, a janela é bisseccionada e cada metade tenta de novo, recursivo,
+// até caber ou até minSplit — só aí o corte vira erro nomeado, porque nem
+// dividindo mais coube.
+func (source *CLI) mergeRepositoryContributions(ctx context.Context, from time.Time, until time.Time, totals map[string]RepositoryCommitCount) error {
+	page, err := source.repositoryContributionsPage(ctx, from, until)
+	if err != nil {
+		return err
+	}
+
+	if !page.truncated {
+		for _, count := range page.counts {
+			merged := totals[count.Repository]
+			merged.Repository = count.Repository
+			merged.Private = count.Private
+			merged.Count += count.Count
+			totals[count.Repository] = merged
+		}
+
+		return nil
+	}
+
+	if until.Sub(from) <= minSplit {
+		return fmt.Errorf(
+			"a conta contribuiu em %d repositórios entre %s e %s, e --by-repo só traz até %d por consulta; nem dividindo a janela por hora isso coube",
+			page.total, from.Format(dateOnly), until.Format(dateOnly), maxRepositoriesPerQuery)
+	}
+
+	middle := from.Add(until.Sub(from) / 2)
+
+	if err := source.mergeRepositoryContributions(ctx, from, middle, totals); err != nil {
+		return err
+	}
+
+	return source.mergeRepositoryContributions(ctx, middle.Add(time.Second), until, totals)
+}
+
+// repositoryPage é o que uma única consulta ao commitContributionsByRepository
+// devolve — truncated diz se o teto de maxRepositoriesPerQuery cortou a
+// resposta, e total é quantos repositórios havia de verdade, só para nomear
+// o corte se ele sobreviver até desistir.
+type repositoryPage struct {
+	counts    []RepositoryCommitCount
+	truncated bool
+	total     int
+}
+
+func (source *CLI) repositoryContributionsPage(ctx context.Context, from time.Time, until time.Time) (repositoryPage, error) {
 	result, err := source.commands.Run(ctx, "", "gh", "api", "graphql",
 		"-f", "query="+repositoryContributionsQuery,
 		"-f", "from="+from.Format(time.RFC3339),
 		"-f", "to="+until.Format(time.RFC3339),
 	)
 	if err != nil {
-		return nil, ErrUnavailable
+		return repositoryPage{}, ErrUnavailable
 	}
 
 	if result.Code == unauthenticated {
-		return nil, ErrUnauthenticated
+		return repositoryPage{}, ErrUnauthenticated
 	}
 	if !result.Passed() {
-		return nil, fmt.Errorf("o gh não conseguiu contar as contribuições: %s", strings.TrimSpace(result.Output))
+		return repositoryPage{}, fmt.Errorf("o gh não conseguiu contar as contribuições: %s", strings.TrimSpace(result.Output))
 	}
 
 	var response struct {
@@ -378,18 +419,11 @@ func (source *CLI) repositoryContributions(ctx context.Context, from time.Time, 
 		} `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(result.Output), &response); err != nil {
-		return nil, fmt.Errorf("não entendi a resposta do gh: %w", err)
+		return repositoryPage{}, fmt.Errorf("não entendi a resposta do gh: %w", err)
 	}
 
 	collection := response.Data.Viewer.ContributionsCollection
 	listed := collection.CommitContributionsByRepository
-
-	if len(listed) < collection.TotalRepositoriesWithContributedCommits {
-		return nil, fmt.Errorf(
-			"a conta contribuiu em %d repositórios entre %s e %s, e --by-repo só traz até %d por consulta; peça um período mais curto",
-			collection.TotalRepositoriesWithContributedCommits,
-			from.Format(dateOnly), until.Format(dateOnly), maxRepositoriesPerQuery)
-	}
 
 	counts := make([]RepositoryCommitCount, 0, len(listed))
 	for _, entry := range listed {
@@ -400,5 +434,9 @@ func (source *CLI) repositoryContributions(ctx context.Context, from time.Time, 
 		})
 	}
 
-	return counts, nil
+	return repositoryPage{
+		counts:    counts,
+		truncated: len(listed) < collection.TotalRepositoriesWithContributedCommits,
+		total:     collection.TotalRepositoriesWithContributedCommits,
+	}, nil
 }

@@ -549,16 +549,123 @@ func TestAccountCommitCountByRepositoryAsksMaxRepositories(t *testing.T) {
 	}
 }
 
-func TestAccountCommitCountByRepositoryRefusesATruncatedAnswer(t *testing.T) {
+func TestAccountCommitCountByRepositoryGivesUpWhenEvenTheNarrowestWindowIsTruncated(t *testing.T) {
 	body := byRepository(150, repositoryEntry("LHPalma/gitarias", true, 156))
+	since := aDay(t, "2026-08-01")
+	until := since.Add(30 * time.Minute)
 
-	_, err := NewCLI(answering(body)).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+	_, err := NewCLI(answering(body)).AccountCommitCountByRepository(t.Context(), since, until)
 
 	if err == nil {
 		t.Fatal("resposta cortada calada tem de virar erro, nao lista incompleta")
 	}
 	if !strings.Contains(err.Error(), "150") {
 		t.Errorf("erro = %v, queria o total real de repositorios", err)
+	}
+}
+
+func TestAccountCommitCountByRepositoryBisectsATruncatedWindow(t *testing.T) {
+	truncated := byRepository(150, repositoryEntry("LHPalma/gitarias", true, 100))
+	firstHalf := byRepository(1, repositoryEntry("LHPalma/gitarias", true, 60))
+	secondHalf := byRepository(1, repositoryEntry("LHPalma/ticketerias", false, 5))
+
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: truncated}},
+		exectest.Response{Result: exec.Result{Output: firstHalf}},
+		exectest.Response{Result: exec.Result{Output: secondHalf}},
+	)
+
+	counts, err := NewCLI(commands).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if err != nil {
+		t.Fatalf("a janela cortada tinha de bisseccionar em vez de recusar, veio %v", err)
+	}
+	if len(commands.Calls) != 3 {
+		t.Fatalf("chamadas = %d, queria a original truncada e as duas metades", len(commands.Calls))
+	}
+
+	want := []RepositoryCommitCount{
+		{Repository: "LHPalma/gitarias", Private: true, Count: 60},
+		{Repository: "LHPalma/ticketerias", Private: false, Count: 5},
+	}
+	if len(counts) != 2 || counts[0] != want[0] || counts[1] != want[1] {
+		t.Errorf("contagens = %+v, queria %+v", counts, want)
+	}
+}
+
+// flagValue lê o valor de uma flag -f nome=valor entre os argumentos de uma
+// chamada, para inspecionar exatamente o que foi pedido ao gh.
+func flagValue(args []string, name string) string {
+	prefix := name + "="
+	for _, arg := range args {
+		if strings.HasPrefix(arg, prefix) {
+			return strings.TrimPrefix(arg, prefix)
+		}
+	}
+
+	return ""
+}
+
+func TestAccountCommitCountByRepositoryPropagatesAFailureInTheFirstHalf(t *testing.T) {
+	truncated := byRepository(150, repositoryEntry("LHPalma/gitarias", true, 100))
+
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: truncated}},
+		exectest.Response{Result: exec.Result{Code: 1, Output: "gh: Bad credentials (HTTP 401)"}},
+	)
+
+	_, err := NewCLI(commands).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if err == nil {
+		t.Fatal("a primeira metade falhou, e isso tem de virar erro sem tentar a segunda")
+	}
+	if len(commands.Calls) != 2 {
+		t.Errorf("chamadas = %d, a falha na primeira metade nao pode deixar tentar a segunda", len(commands.Calls))
+	}
+}
+
+func TestAccountCommitCountByRepositoryPropagatesAFailureInTheSecondHalf(t *testing.T) {
+	truncated := byRepository(150, repositoryEntry("LHPalma/gitarias", true, 100))
+
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: truncated}},
+		exectest.Response{Result: exec.Result{Output: byRepository(0, "")}},
+		exectest.Response{Result: exec.Result{Code: 1, Output: "gh: Bad credentials (HTTP 401)"}},
+	)
+
+	_, err := NewCLI(commands).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if err == nil {
+		t.Fatal("a segunda metade falhou, e isso tem de virar erro mesmo com a primeira ok")
+	}
+	if len(commands.Calls) != 3 {
+		t.Errorf("chamadas = %d, queria a truncada e as duas metades tentadas", len(commands.Calls))
+	}
+}
+
+func TestAccountCommitCountByRepositoryBisectionNeverOverlapsTheHalves(t *testing.T) {
+	truncated := byRepository(150, repositoryEntry("LHPalma/gitarias", true, 100))
+
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: truncated}},
+		exectest.Response{Result: exec.Result{Output: byRepository(0, "")}},
+		exectest.Response{Result: exec.Result{Output: byRepository(0, "")}},
+	)
+
+	since, until := aDay(t, "2026-08-01"), aDay(t, "2026-08-23")
+	NewCLI(commands).AccountCommitCountByRepository(t.Context(), since, until)
+
+	firstHalfEnd, err := time.Parse(time.RFC3339, flagValue(commands.Calls[1].Args, "to"))
+	if err != nil {
+		t.Fatalf("nao consegui ler o to da primeira metade: %v", err)
+	}
+	secondHalfStart, err := time.Parse(time.RFC3339, flagValue(commands.Calls[2].Args, "from"))
+	if err != nil {
+		t.Fatalf("nao consegui ler o from da segunda metade: %v", err)
+	}
+
+	if !secondHalfStart.Equal(firstHalfEnd.Add(time.Second)) {
+		t.Errorf("segunda metade comeca em %v, primeira termina em %v; tem de ser exatamente um segundo depois, nunca no mesmo instante", secondHalfStart, firstHalfEnd)
 	}
 }
 
