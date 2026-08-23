@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -249,4 +250,106 @@ func (source *CLI) commitContributions(ctx context.Context, from time.Time, to t
 	}
 
 	return response.Data.Viewer.ContributionsCollection.TotalCommitContributions, nil
+}
+
+// maxRepositoriesPerQuery é o teto que o commitContributionsByRepository do
+// GitHub aceita — pedir mais que isso é erro da API, não corte silencioso.
+const maxRepositoriesPerQuery = 100
+
+const repositoryContributionsQuery = `query($from: DateTime!, $to: DateTime!) {
+  viewer {
+    contributionsCollection(from: $from, to: $to) {
+      totalRepositoriesWithContributedCommits
+      commitContributionsByRepository(maxRepositories: 100) {
+        repository {
+          nameWithOwner
+          isPrivate
+        }
+        contributions {
+          totalCount
+        }
+      }
+    }
+  }
+}`
+
+// AccountCommitCountByRepository quebra AccountCommitCount por repositório,
+// entre since e until — os dois inclusos. Ao contrário de AccountCommitCount,
+// não quebra o período em janelas: o GitHub não pagina esta consulta (não há
+// after/before, só o teto de maxRepositoriesPerQuery), então juntar janelas
+// juntaria contagem por repositório de fontes diferentes sem como somá-las
+// aqui — e por isso o período que passa de um ano vira o próprio erro que a
+// API já dá, sem tentar disfarçar.
+//
+// Quando a conta contribuiu em mais repositórios do que o teto, a resposta
+// viria cortada calada — GitHub ordena por contribuição e trunca. Em vez
+// disso o erro nomeia o corte: RN-04 do profile já cobrava isso do
+// CommitCount local (contagem ilegível é erro, não zero silencioso), e aqui
+// o mesmo vale para "cortada", não só para "ilegível".
+func (source *CLI) AccountCommitCountByRepository(ctx context.Context, since time.Time, until time.Time) ([]RepositoryCommitCount, error) {
+	result, err := source.commands.Run(ctx, "", "gh", "api", "graphql",
+		"-f", "query="+repositoryContributionsQuery,
+		"-f", "from="+since.Format(time.RFC3339),
+		"-f", "to="+until.Format(time.RFC3339),
+	)
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+
+	if result.Code == unauthenticated {
+		return nil, ErrUnauthenticated
+	}
+	if !result.Passed() {
+		return nil, fmt.Errorf("o gh não conseguiu contar as contribuições: %s", strings.TrimSpace(result.Output))
+	}
+
+	var response struct {
+		Data struct {
+			Viewer struct {
+				ContributionsCollection struct {
+					TotalRepositoriesWithContributedCommits int `json:"totalRepositoriesWithContributedCommits"`
+					CommitContributionsByRepository         []struct {
+						Repository struct {
+							NameWithOwner string `json:"nameWithOwner"`
+							IsPrivate     bool   `json:"isPrivate"`
+						} `json:"repository"`
+						Contributions struct {
+							TotalCount int `json:"totalCount"`
+						} `json:"contributions"`
+					} `json:"commitContributionsByRepository"`
+				} `json:"contributionsCollection"`
+			} `json:"viewer"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(result.Output), &response); err != nil {
+		return nil, fmt.Errorf("não entendi a resposta do gh: %w", err)
+	}
+
+	collection := response.Data.Viewer.ContributionsCollection
+	listed := collection.CommitContributionsByRepository
+
+	if len(listed) < collection.TotalRepositoriesWithContributedCommits {
+		return nil, fmt.Errorf(
+			"a conta contribuiu em %d repositórios nesse período, e --by-repo só traz até %d; peça um período mais curto",
+			collection.TotalRepositoriesWithContributedCommits, maxRepositoriesPerQuery)
+	}
+
+	counts := make([]RepositoryCommitCount, 0, len(listed))
+	for _, entry := range listed {
+		counts = append(counts, RepositoryCommitCount{
+			Repository: entry.Repository.NameWithOwner,
+			Private:    entry.Repository.IsPrivate,
+			Count:      entry.Contributions.TotalCount,
+		})
+	}
+
+	sort.Slice(counts, func(i int, j int) bool {
+		if counts[i].Count != counts[j].Count {
+			return counts[i].Count > counts[j].Count
+		}
+
+		return counts[i].Repository < counts[j].Repository
+	})
+
+	return counts, nil
 }

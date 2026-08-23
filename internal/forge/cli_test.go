@@ -3,6 +3,7 @@ package forge
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -471,6 +472,170 @@ func TestAccountCommitCountHonoursCancellation(t *testing.T) {
 	cancel()
 
 	if _, err := NewCLI(answering(contributed)).AccountCommitCount(ctx, aDay(t, "2026-08-01"), aDay(t, "2026-08-23")); err == nil {
+		t.Fatal("contexto cancelado tem de parar a chamada")
+	}
+}
+
+func byRepository(total int, entries string) string {
+	return `{"data":{"viewer":{"contributionsCollection":{` +
+		`"totalRepositoriesWithContributedCommits":` + strconv.Itoa(total) + `,` +
+		`"commitContributionsByRepository":[` + entries + `]}}}}`
+}
+
+func repositoryEntry(name string, private bool, count int) string {
+	return `{"repository":{"nameWithOwner":"` + name + `","isPrivate":` + strconv.FormatBool(private) + `},` +
+		`"contributions":{"totalCount":` + strconv.Itoa(count) + `}}`
+}
+
+func TestAccountCommitCountByRepositoryReadsEachRepository(t *testing.T) {
+	body := byRepository(2, repositoryEntry("LHPalma/gitarias", true, 156)+","+repositoryEntry("LHPalma/ticketerias", false, 5))
+
+	counts, err := NewCLI(answering(body)).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if len(counts) != 2 {
+		t.Fatalf("repositorios = %+v, queria os dois", counts)
+	}
+
+	first := RepositoryCommitCount{Repository: "LHPalma/gitarias", Private: true, Count: 156}
+	if counts[0] != first {
+		t.Errorf("primeiro = %+v, queria %+v", counts[0], first)
+	}
+}
+
+func TestAccountCommitCountByRepositorySortsByCountDescending(t *testing.T) {
+	body := byRepository(3,
+		repositoryEntry("LHPalma/pouco", false, 2)+","+
+			repositoryEntry("LHPalma/muito", false, 100)+","+
+			repositoryEntry("LHPalma/medio", false, 10))
+
+	counts, err := NewCLI(answering(body)).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+
+	want := []string{"LHPalma/muito", "LHPalma/medio", "LHPalma/pouco"}
+	for index, name := range want {
+		if counts[index].Repository != name {
+			t.Errorf("posicao %d = %q, queria %q; a ordem tem de ser por contagem decrescente", index, counts[index].Repository, name)
+		}
+	}
+}
+
+func TestAccountCommitCountByRepositoryBreaksTiesByName(t *testing.T) {
+	body := byRepository(2, repositoryEntry("LHPalma/zulu", false, 5)+","+repositoryEntry("LHPalma/alfa", false, 5))
+
+	counts, err := NewCLI(answering(body)).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if counts[0].Repository != "LHPalma/alfa" || counts[1].Repository != "LHPalma/zulu" {
+		t.Errorf("ordem = %+v, empate tem de desempatar por nome", counts)
+	}
+}
+
+func TestAccountCommitCountByRepositoryAsksMaxRepositories(t *testing.T) {
+	commands := answering(byRepository(0, ""))
+
+	NewCLI(commands).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	call := strings.Join(commands.Calls[0].Args, " ")
+	if !strings.Contains(call, "maxRepositories: 100") {
+		t.Errorf("chamada = %q, queria o teto pedido explicitamente", call)
+	}
+}
+
+func TestAccountCommitCountByRepositoryRefusesATruncatedAnswer(t *testing.T) {
+	body := byRepository(150, repositoryEntry("LHPalma/gitarias", true, 156))
+
+	_, err := NewCLI(answering(body)).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if err == nil {
+		t.Fatal("resposta cortada calada tem de virar erro, nao lista incompleta")
+	}
+	if !strings.Contains(err.Error(), "150") {
+		t.Errorf("erro = %v, queria o total real de repositorios", err)
+	}
+}
+
+func TestAccountCommitCountByRepositoryAcceptsAnUntruncatedAnswer(t *testing.T) {
+	body := byRepository(1, repositoryEntry("LHPalma/gitarias", true, 156))
+
+	_, err := NewCLI(answering(body)).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if err != nil {
+		t.Fatalf("total bate com o que veio, nao devia recusar: %v", err)
+	}
+}
+
+func TestAccountCommitCountByRepositorySaysWhenTheGhIsNotThere(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{Err: errors.New("executable file not found in $PATH")})
+
+	_, err := NewCLI(commands).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if !errors.Is(err, ErrUnavailable) {
+		t.Errorf("erro = %v, queria a ausencia do gh", err)
+	}
+}
+
+func TestAccountCommitCountByRepositorySeparatesHavingNoCredentialFromBeingRefused(t *testing.T) {
+	tests := []struct {
+		name   string
+		result exec.Result
+		want   error
+	}{
+		{
+			name:   "sem credencial nenhuma",
+			result: exec.Result{Code: 4, Output: "To get started with GitHub CLI, please run: gh auth login"},
+			want:   ErrUnauthenticated,
+		},
+		{
+			name:   "servidor recusou",
+			result: exec.Result{Code: 1, Output: "gh: Bad credentials (HTTP 401)"},
+		},
+		{
+			name:   "periodo passa de um ano",
+			result: exec.Result{Code: 1, Output: "gh: The total time spanned by 'from' and 'to' must not exceed 1 year"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			commands := exectest.NewRunner(exectest.Response{Result: test.result})
+
+			_, err := NewCLI(commands).AccountCommitCountByRepository(t.Context(), aDay(t, "2024-01-01"), aDay(t, "2026-08-23"))
+
+			if err == nil {
+				t.Fatal("todos os casos sao erro")
+			}
+			if test.want != nil && !errors.Is(err, test.want) {
+				t.Errorf("erro = %v, queria %v", err, test.want)
+			}
+			if test.want == nil && errors.Is(err, ErrUnauthenticated) {
+				t.Errorf("erro = %v; ha credencial, o problema e outro", err)
+			}
+		})
+	}
+}
+
+func TestAccountCommitCountByRepositoryRefusesAnAnswerItCannotRead(t *testing.T) {
+	_, err := NewCLI(answering("isto nao e json")).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
+
+	if err == nil {
+		t.Fatal("resposta ilegivel tem de virar erro")
+	}
+}
+
+func TestAccountCommitCountByRepositoryHonoursCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	body := byRepository(1, repositoryEntry("LHPalma/gitarias", true, 156))
+	if _, err := NewCLI(answering(body)).AccountCommitCountByRepository(ctx, aDay(t, "2026-08-01"), aDay(t, "2026-08-23")); err == nil {
 		t.Fatal("contexto cancelado tem de parar a chamada")
 	}
 }

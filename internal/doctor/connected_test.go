@@ -33,6 +33,10 @@ func (source answers) AccountCommitCount(context.Context, time.Time, time.Time) 
 	return 0, source.err
 }
 
+func (source answers) AccountCommitCountByRepository(context.Context, time.Time, time.Time) ([]forge.RepositoryCommitCount, error) {
+	return nil, source.err
+}
+
 func TestConnectedNamesWhoTheGitHubAccepted(t *testing.T) {
 	check := Connected(t.Context(), answers{login: "LHPalma"})
 

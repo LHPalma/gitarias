@@ -13,4 +13,5 @@ type Source interface {
 	Viewer(ctx context.Context) (string, error)
 	Scopes(ctx context.Context) ([]string, error)
 	AccountCommitCount(ctx context.Context, since time.Time, until time.Time) (int, error)
+	AccountCommitCountByRepository(ctx context.Context, since time.Time, until time.Time) ([]RepositoryCommitCount, error)
 }
