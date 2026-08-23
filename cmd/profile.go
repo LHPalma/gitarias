@@ -15,8 +15,10 @@ import (
 )
 
 type profileOptions struct {
+	formatOptions
 	commitCount bool
 	account     bool
+	byRepo      bool
 	since       string
 	until       string
 }
@@ -32,7 +34,10 @@ func newProfileCommand(runner Runner, commands exec.Runner) *cobra.Command {
 			"Com --account, --commit-count conta em toda a conta do GitHub, não só\n" +
 			"aqui — FAZ CHAMADA DE REDE, pelo gh. A soma vale o que o token consegue\n" +
 			"ler: sem o escopo read:user, contribuições de repositório privado ficam\n" +
-			"de fora, caladas — confira com gtr doctor --online.",
+			"de fora, caladas — confira com gtr doctor --online.\n\n" +
+			"--by-repo quebra a soma da conta por repositório, em vez de somar tudo;\n" +
+			"só vale com --account, e só cobre período de até um ano e conta ativa em\n" +
+			"até 100 repositórios — passado disso, recusa em vez de trazer cortado.",
 		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, args []string) error {
 			return runProfile(command, profile.NewRepo(runner), forge.NewCLI(commands), options)
@@ -42,9 +47,12 @@ func newProfileCommand(runner Runner, commands exec.Runner) *cobra.Command {
 	command.Flags().BoolVar(&options.commitCount, "commit-count", false, "quantos commits seus caem no período (obrigatória: é a métrica)")
 	command.Flags().BoolVar(&options.account, "account", false,
 		"conta em toda a conta do GitHub, não só neste repositório; FAZ CHAMADA DE REDE")
+	command.Flags().BoolVar(&options.byRepo, "by-repo", false,
+		"quebra a soma de --account por repositório; só vale com --account")
 	command.Flags().StringVar(&options.since, "since", "",
 		"início do período, AAAA-MM-DD; sem --until, vai até hoje; sem nenhuma das duas, só hoje")
 	command.Flags().StringVar(&options.until, "until", "", "fim do período, AAAA-MM-DD; sem --since, começa hoje")
+	options.register(command)
 
 	return command
 }
@@ -52,6 +60,21 @@ func newProfileCommand(runner Runner, commands exec.Runner) *cobra.Command {
 func runProfile(command *cobra.Command, repo *profile.Repo, source forge.Source, options profileOptions) error {
 	if !options.commitCount {
 		return fmt.Errorf("escolha uma métrica: --commit-count")
+	}
+	if options.byRepo && !options.account {
+		return fmt.Errorf("--by-repo só vale com --account")
+	}
+	if !options.byRepo && changedAnyFormatFlag(command) {
+		return fmt.Errorf("--format, --no-header, --output e --separator só valem com --by-repo")
+	}
+
+	var chosen rendering
+	if options.byRepo {
+		resolved, err := options.resolve(command)
+		if err != nil {
+			return err
+		}
+		chosen = resolved
 	}
 
 	since, until, err := resolvePeriod(options.since, options.until)
@@ -66,6 +89,10 @@ func runProfile(command *cobra.Command, repo *profile.Repo, source forge.Source,
 	}
 
 	if options.account {
+		if options.byRepo {
+			return runAccountCommitCountByRepository(command, repo, source, options, chosen, since, until)
+		}
+
 		return runAccountCommitCount(command, repo, source, since, until)
 	}
 
@@ -83,6 +110,20 @@ func runProfile(command *cobra.Command, repo *profile.Repo, source forge.Source,
 	}
 
 	return printCommitCount(command.OutOrStdout(), count, since, until)
+}
+
+// changedAnyFormatFlag existe para recusar --format, --no-header, --output e
+// --separator fora de --by-repo em vez de descartá-los calados: --commit-count
+// sozinho e --account sozinho imprimem uma linha só, e não há tabela para
+// nenhum desses formatar.
+func changedAnyFormatFlag(command *cobra.Command) bool {
+	for _, name := range []string{"format", "no-header", "output", "separator"} {
+		if command.Flags().Changed(name) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func printCommitCount(output io.Writer, count int, since string, until string) error {
@@ -117,6 +158,33 @@ func runAccountCommitCount(command *cobra.Command, repo *profile.Repo, source fo
 
 	output := command.OutOrStdout()
 	if err := printCommitCount(output, count, since, until); err != nil {
+		return err
+	}
+
+	return warnAboutUnpushedCommits(command, repo, output)
+}
+
+// runAccountCommitCountByRepository é o --by-repo: a mesma fonte do
+// runAccountCommitCount, quebrada por repositório em vez de somada. O
+// domínio já recusa período maior que um ano e conta ativa em mais de 100
+// repositórios — nenhum dos dois cabe na consulta que o GitHub aceita, e o
+// erro vem de lá nomeado, não de um corte silencioso aqui.
+func runAccountCommitCountByRepository(command *cobra.Command, repo *profile.Repo, source forge.Source, options profileOptions, chosen rendering, since string, until string) error {
+	start, end := periodBounds(since, until)
+
+	ctx, cancel := context.WithTimeout(command.Context(), networkDeadline)
+	defer cancel()
+
+	counts, err := source.AccountCommitCountByRepository(ctx, start, end)
+	if errors.Is(err, forge.ErrUnavailable) {
+		return fmt.Errorf("o gtr profile --account fala com o GitHub pelo gh, e ele não está no PATH; rode gtr setup para ver como instalar")
+	}
+	if err != nil {
+		return err
+	}
+
+	output := command.OutOrStdout()
+	if err := emit(output, options.output, "commits-por-repositorio", chosen, repositoryCommitCountsTable{counts: counts}); err != nil {
 		return err
 	}
 

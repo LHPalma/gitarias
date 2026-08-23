@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/LHPalma/gitarias/internal/exec"
 	"github.com/LHPalma/gitarias/internal/exec/exectest"
+	"github.com/LHPalma/gitarias/internal/forge"
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/git/gittest"
 )
@@ -364,5 +366,211 @@ func TestProfileAccountDeclaresTheNetworkCall(t *testing.T) {
 
 	if !strings.Contains(result.stdout, "REDE") {
 		t.Errorf("ajuda = %q; --account sai da máquina, e isso tem de estar dito", result.stdout)
+	}
+}
+
+const byRepoContributed = `{"data":{"viewer":{"contributionsCollection":{` +
+	`"totalRepositoriesWithContributedCommits":2,` +
+	`"commitContributionsByRepository":[` +
+	`{"repository":{"nameWithOwner":"LHPalma/gitarias","isPrivate":true},"contributions":{"totalCount":156}},` +
+	`{"repository":{"nameWithOwner":"LHPalma/ticketerias","isPrivate":false},"contributions":{"totalCount":5}}` +
+	`]}}}}`
+
+func TestProfileByRepoRequiresAccount(t *testing.T) {
+	result := executeWith(t, inARepository(), nil, "profile", "--commit-count", "--by-repo")
+
+	if result.err == nil {
+		t.Fatal("--by-repo sozinho não faz sentido: quebrar o quê por repositório?")
+	}
+	if !strings.Contains(result.err.Error(), "--account") {
+		t.Errorf("erro = %v, queria que nomeasse --account", result.err)
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a validação vem antes de tocar em qualquer coisa", result.calls)
+	}
+}
+
+func TestProfileByRepoListsEachRepository(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+
+	result := executeWith(t, responses, answered(byRepoContributed), "profile", "--commit-count", "--account", "--by-repo")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	for _, wanted := range []string{"LHPalma/gitarias", "156", "LHPalma/ticketerias", "5"} {
+		if !strings.Contains(result.stdout, wanted) {
+			t.Errorf("saída = %q, queria %q", result.stdout, wanted)
+		}
+	}
+}
+
+func TestProfileByRepoOrdersTheMostActiveFirst(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+
+	result := executeWith(t, responses, answered(byRepoContributed), "profile", "--commit-count", "--account", "--by-repo")
+
+	gitarias := strings.Index(result.stdout, "LHPalma/gitarias")
+	ticketerias := strings.Index(result.stdout, "LHPalma/ticketerias")
+	if gitarias == -1 || ticketerias == -1 || gitarias > ticketerias {
+		t.Errorf("saída = %q, queria o mais ativo primeiro", result.stdout)
+	}
+}
+
+func TestProfileByRepoJSON(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+
+	result := executeWith(t, responses, answered(byRepoContributed),
+		"profile", "--commit-count", "--account", "--by-repo", "--format", "json")
+
+	var document repositoryCommitCountsDocument
+	if err := json.Unmarshal([]byte(result.stdout), &document); err != nil {
+		t.Fatalf("a saída tem de ser json válido, veio %q: %v", result.stdout, err)
+	}
+	if len(document.Repositories) != 2 {
+		t.Fatalf("repositórios = %+v, queria os dois", document.Repositories)
+	}
+
+	first := repositoryCommitCountRecord{Repository: "LHPalma/gitarias", Private: true, Commits: 156}
+	if document.Repositories[0] != first {
+		t.Errorf("primeiro = %+v, queria %+v", document.Repositories[0], first)
+	}
+}
+
+func TestProfileByRepoCSV(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+
+	result := executeWith(t, responses, answered(byRepoContributed),
+		"profile", "--commit-count", "--account", "--by-repo", "--format", "csv")
+
+	want := "repositório,privado,commits\n" +
+		"LHPalma/gitarias,true,156\n" +
+		"LHPalma/ticketerias,false,5\n"
+
+	if result.stdout != want {
+		t.Errorf("saída = %q, queria %q", result.stdout, want)
+	}
+}
+
+func TestProfileByRepoWarnsAboutUnpushedCommits(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "3"}
+
+	result := executeWith(t, responses, answered(byRepoContributed), "profile", "--commit-count", "--account", "--by-repo")
+
+	if !strings.Contains(result.stdout, "3 commits deste repositório ainda são só locais") {
+		t.Errorf("saída = %q, queria o mesmo aviso do --account sem --by-repo", result.stdout)
+	}
+}
+
+func TestProfileByRepoRefusesATruncatedAccount(t *testing.T) {
+	truncated := `{"data":{"viewer":{"contributionsCollection":{` +
+		`"totalRepositoriesWithContributedCommits":150,` +
+		`"commitContributionsByRepository":[{"repository":{"nameWithOwner":"LHPalma/gitarias","isPrivate":true},"contributions":{"totalCount":156}}]` +
+		`}}}}`
+
+	result := executeWith(t, inARepository(), answered(truncated), "profile", "--commit-count", "--account", "--by-repo")
+
+	if result.err == nil {
+		t.Fatal("resposta cortada tem de virar erro, não lista incompleta")
+	}
+}
+
+func TestProfileByRepoWithoutGh(t *testing.T) {
+	outcomes := []exectest.Response{{Err: errors.New("executable file not found in $PATH")}}
+
+	result := executeWith(t, inARepository(), outcomes, "profile", "--commit-count", "--account", "--by-repo")
+
+	if result.err == nil {
+		t.Fatal("sem gh o --by-repo não tem como falar com o GitHub")
+	}
+	if !strings.Contains(result.err.Error(), "gtr setup") {
+		t.Errorf("erro = %v; a saída é acionável e o setup diz o comando da máquina", result.err)
+	}
+}
+
+func TestProfileFormatFlagsRequireByRepo(t *testing.T) {
+	tests := []string{"--format=json", "--no-header", "--output=out.json", "--separator=;"}
+
+	for _, flag := range tests {
+		t.Run(flag, func(t *testing.T) {
+			result := executeWith(t, inARepository(), nil, "profile", "--commit-count", "--account", flag)
+
+			if result.err == nil {
+				t.Fatalf("%s sem --by-repo não tem tabela nenhuma para formatar; flag descartada calada é o pior modo de falha", flag)
+			}
+			if len(result.calls) != 0 {
+				t.Errorf("chamadas = %v, a validação vem antes de tocar em qualquer coisa", result.calls)
+			}
+		})
+	}
+}
+
+func TestProfileByRepoPropagatesTheWriteFailure(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+
+	command := NewRootCommand(gittest.NewRunner(responses), exectest.NewRunner(answered(byRepoContributed)...), noWeb(), noFinder(), noNotices)
+	command.SetOut(brokenWriter{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"profile", "--commit-count", "--account", "--by-repo"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha de escrita tem de virar erro")
+	}
+}
+
+func TestProfileByRepoRejectsAnInvalidFormat(t *testing.T) {
+	result := executeWith(t, inARepository(), nil, "profile", "--commit-count", "--account", "--by-repo", "--format", "xml")
+
+	if result.err == nil {
+		t.Fatal("formato desconhecido tem de ser recusado, antes de qualquer chamada")
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a validação de formato vem antes da rede", result.calls)
+	}
+}
+
+func TestProfileByRepoWithNoContributions(t *testing.T) {
+	empty := `{"data":{"viewer":{"contributionsCollection":{"totalRepositoriesWithContributedCommits":0,"commitContributionsByRepository":[]}}}}`
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+
+	result := executeWith(t, responses, answered(empty), "profile", "--commit-count", "--account", "--by-repo")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "Nenhum commit contribuído") {
+		t.Errorf("saída = %q, queria a mensagem específica de lista vazia", result.stdout)
+	}
+}
+
+func TestRepositoryCommitCountsTablePropagatesTheWriteFailure(t *testing.T) {
+	empty := repositoryCommitCountsTable{}
+	if err := empty.text(brokenWriter{}); err == nil {
+		t.Fatal("falha de escrita na mensagem de lista vazia tem de virar erro")
+	}
+
+	populated := repositoryCommitCountsTable{counts: []forge.RepositoryCommitCount{{Repository: "LHPalma/gitarias", Count: 156}}}
+	if err := populated.text(brokenWriter{}); err == nil {
+		t.Fatal("falha ao esvaziar o alinhador tem de virar erro")
+	}
+}
+
+func TestProfileByRepoNeverEndsALineWithSpace(t *testing.T) {
+	responses := inARepository()
+	responses[unpushedCall] = gittest.Response{Output: "0"}
+
+	result := executeWith(t, responses, answered(byRepoContributed), "profile", "--commit-count", "--account", "--by-repo")
+
+	for number, line := range strings.Split(result.stdout, "\n") {
+		if strings.HasSuffix(line, " ") {
+			t.Errorf("RN-10: a linha %d termina em espaço: %q", number+1, line)
+		}
 	}
 }
