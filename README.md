@@ -1185,6 +1185,57 @@ de assunto só (sem corpo) saía com o trailer grudado na primeira linha, sem
 o parágrafo em branco que o git exige para reconhecer aquilo como trailer
 depois — corrigido, e testado com exatamente esse caso.
 
+### `gtr diff export`
+
+Empacota o estado **não commitado** da árvore — tracked modificado, apagado,
+staged e untracked — num patch aplicável, para mandar a outra pessoa ou
+guardar fora do repositório. `git diff > x.patch` não faz isso sozinho: ignora
+untracked e reduz binário a "Binary files differ" — o resultado parece uma
+cópia e não é.
+
+```
+$ gtr diff export > mudancas.patch
+5 arquivos exportados, 3 novos. Patch verificado, aplica sobre c0c73d6.
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--include-ignored` | `false` | Inclui arquivos casados pelo `.gitignore` |
+
+**O patch vai para o `stdout`, o resumo para o `stderr`** — a mesma separação
+de todo comando do `gtr`: `gtr diff export > mudancas.patch` e
+`gtr diff export | pbcopy` funcionam sem que o resumo contamine o arquivo.
+
+**Nem o índice real nem a árvore são tocados.** O comando roda inteiramente
+sobre um índice temporário, descartado ao fim: `git add -N -f` nele — nunca no
+seu — faz o `git diff HEAD` enxergar cada caminho novo (untracked, ignorado
+com `--include-ignored`, ou só staged) como arquivo criado, com o conteúdo
+completo lido do disco. Rodar o export duas vezes seguidas produz saída
+idêntica, e o `git status` antes e depois é igual.
+
+**Ignorado nunca entra por padrão.** Varrer o `.gitignore` traria
+`node_modules` e artefato de build, gerando um patch de centenas de megabytes
+sem servir para nada. `--include-ignored` existe para o caso legítimo — mandar
+um `.env` de exemplo.
+
+**O patch entregue é um patch verificado.** Antes de escrever qualquer coisa
+no `stdout`, o `gtr` roda `git apply --check --cached` sobre um segundo
+índice temporário, também partindo do zero do `HEAD` — a única garantia da
+feature que protege quem **recebe** o patch, não quem o gerou. Se não
+aplicar, o comando falha e não emite patch nenhum:
+
+```
+$ gtr diff export
+erro: patch gerado não aplica: ...
+```
+
+**Árvore limpa não emite patch vazio:**
+
+```
+$ gtr diff export
+Nada para exportar: a árvore não tem nenhuma mudança não commitada.
+```
+
 ## O que a ferramenta nunca faz
 
 Estas não são configurações — são propriedades do código:
