@@ -700,8 +700,12 @@ existe uma:
 |---|---|---|
 | `--commit-count` | `false` | A métrica: quantos commits seus caem no período. Obrigatória — sem ela, o comando recusa |
 | `--account` | `false` | Conta em toda a conta do GitHub, não só neste repositório; **faz chamada de rede** |
+| `--by-repo` | `false` | Quebra `--account` por repositório em vez de somar tudo; só vale com `--account` |
 | `--since <data>` | hoje | Início do período, `AAAA-MM-DD`. Sem `--until`, vai até hoje |
 | `--until <data>` | hoje | Fim do período, `AAAA-MM-DD`. Sem `--since`, começa hoje |
+| `--format <f>` | `text` | Só com `--by-repo`: `text`, `csv`, `tsv` ou `json` |
+| `--no-header` | `false` | Só com `--by-repo --format csv` ou `tsv`: omite a linha de nomes das colunas |
+| `--output <caminho>` | vazio | Só com `--by-repo`: caminho do arquivo a gravar, em vez do `stdout` |
 
 Sem nenhuma das duas datas, o período é só hoje:
 
@@ -764,6 +768,32 @@ comparar contra nada.
 O período pode passar de um ano: a API do GitHub só aceita janelas de até um
 ano por consulta, e o `gtr` quebra o período pedido nessas janelas e soma o
 resultado.
+
+**`--by-repo` quebra a soma de `--account` por repositório, do mais ativo
+para o menos**, em vez de somar tudo numa linha só:
+
+```
+$ gtr profile --commit-count --account --by-repo --since 2026-08-01
+  LHPalma/gitarias          156
+  devicr/IcrHub               49
+  devicr/icrhub-web           42
+  LHPalma/ticketerias          5
+  devicr/API-Monolito-CRM      2
+```
+
+Aceita os três formatos de sempre — `text`, `csv` e `json` —, `--no-header` e
+`--output`, todos só válidos junto de `--by-repo`: sem ele não há tabela
+nenhuma para formatar, e uma flag setada de propósito e descartada calada é
+o pior modo de falha.
+
+**`--by-repo` não quebra o período em janelas nem pagina.** O GitHub não
+oferece cursor para essa consulta — só um teto de 100 repositórios por
+página —, e juntar duas janelas somaria contagens de fontes diferentes sem
+como reconciliá-las por repositório. Por isso `--by-repo` só cobre período de
+até um ano e conta ativa em até 100 repositórios; passado qualquer um dos
+dois, recusa com erro em vez de trazer a lista cortada calada. `--account`
+sozinho, sem `--by-repo`, continua cobrindo qualquer período — ele soma o
+total por janela, e não precisa reconciliar nada por repositório.
 
 ### `gtr setup`
 
