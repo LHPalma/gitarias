@@ -119,14 +119,26 @@ func (repo *Repo) globalPath(ctx context.Context, force bool) (string, error) {
 	return fallback, nil
 }
 
+// defaultGlobalExcludesPath é onde o git guarda o excludesFile global quando
+// core.excludesFile não está configurado. A ordem é a do próprio git, medida
+// contra ele: XDG_CONFIG_HOME primeiro, depois HOME — e HOME é lido direto
+// da variável, não por os.UserHomeDir, porque no Windows o git honra um HOME
+// setado à mão, e o os.UserHomeDir da stdlib ignora HOME ali e só olha
+// %USERPROFILE%. Sem HOME, cai para o que o sistema operacional considera o
+// diretório do usuário — a mesma conta que o git usaria nesse caso.
 func defaultGlobalExcludesPath() (string, error) {
 	if base := os.Getenv("XDG_CONFIG_HOME"); base != "" {
 		return filepath.Join(base, "git", "ignore"), nil
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+	home := os.Getenv("HOME")
+	if home == "" {
+		found, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+
+		home = found
 	}
 
 	return filepath.Join(home, ".config", "git", "ignore"), nil

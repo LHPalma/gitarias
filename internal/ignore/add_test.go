@@ -480,9 +480,17 @@ func TestDefaultGlobalExcludesPathFallsBackToHomeWhenXDGIsUnset(t *testing.T) {
 	}
 }
 
+// TestDefaultGlobalExcludesPathPropagatesTheHomeFailure nega toda variável
+// que algum sistema operacional consultaria para achar o diretório do
+// usuário — HOME é a do Unix e a que o git também honra no Windows;
+// USERPROFILE, HOMEDRIVE e HOMEPATH são as que o os.UserHomeDir cai para lá
+// quando HOME está vazio. Sem nenhuma delas, não há de onde tirar o caminho.
 func TestDefaultGlobalExcludesPathPropagatesTheHomeFailure(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
 
 	if _, err := defaultGlobalExcludesPath(); err == nil {
 		t.Fatal("sem XDG_CONFIG_HOME nem HOME não há como saber o caminho, tinha de falhar")
