@@ -192,6 +192,34 @@ const contributionsQuery = `query($from: DateTime!, $to: DateTime!) {
 // única consulta.
 const yearWindow = 365 * 24 * time.Hour
 
+// dateOnly nomeia uma janela num erro sem o ruído da hora, que quem lê não
+// pediu e não ajuda a encontrar o período mais curto que resolveria.
+const dateOnly = "2006-01-02"
+
+// window é um pedaço do período pedido, pequeno o bastante para uma única
+// consulta ao contributionsCollection aceitar.
+type window struct {
+	from  time.Time
+	until time.Time
+}
+
+// windows quebra [since, until] em pedaços de até yearWindow, o teto que a
+// API aceita por consulta — since e until inclusos nas pontas.
+func windows(since time.Time, until time.Time) []window {
+	var pieces []window
+
+	for start := since; !start.After(until); start = start.Add(yearWindow) {
+		end := start.Add(yearWindow)
+		if end.After(until) {
+			end = until
+		}
+
+		pieces = append(pieces, window{from: start, until: end})
+	}
+
+	return pieces
+}
+
 // AccountCommitCount conta os commits que a conta autenticada contribuiu, em
 // todos os repositórios que ela alcança, entre since e until — os dois
 // inclusos. Quem resolve "conta autenticada" é o próprio gh, nunca um login
@@ -202,13 +230,8 @@ const yearWindow = 365 * 24 * time.Hour
 func (source *CLI) AccountCommitCount(ctx context.Context, since time.Time, until time.Time) (int, error) {
 	total := 0
 
-	for start := since; !start.After(until); start = start.Add(yearWindow) {
-		end := start.Add(yearWindow)
-		if end.After(until) {
-			end = until
-		}
-
-		count, err := source.commitContributions(ctx, start, end)
+	for _, piece := range windows(since, until) {
+		count, err := source.commitContributions(ctx, piece.from, piece.until)
 		if err != nil {
 			return 0, err
 		}
@@ -274,22 +297,55 @@ const repositoryContributionsQuery = `query($from: DateTime!, $to: DateTime!) {
 }`
 
 // AccountCommitCountByRepository quebra AccountCommitCount por repositório,
-// entre since e until — os dois inclusos. Ao contrário de AccountCommitCount,
-// não quebra o período em janelas: o GitHub não pagina esta consulta (não há
-// after/before, só o teto de maxRepositoriesPerQuery), então juntar janelas
-// juntaria contagem por repositório de fontes diferentes sem como somá-las
-// aqui — e por isso o período que passa de um ano vira o próprio erro que a
-// API já dá, sem tentar disfarçar.
+// entre since e until — os dois inclusos. Igual a AccountCommitCount, um
+// período maior que um ano é quebrado em janelas — mas aqui isso não basta:
+// o mesmo repositório pode aparecer em janelas diferentes, e quem chama quer
+// uma linha por repositório, não uma por repositório-e-janela. Por isso as
+// janelas se somam por nameWithOwner aqui dentro, antes de devolver.
 //
-// Quando a conta contribuiu em mais repositórios do que o teto, a resposta
-// viria cortada calada — GitHub ordena por contribuição e trunca. Em vez
-// disso o erro nomeia o corte: RN-04 do profile já cobrava isso do
-// CommitCount local (contagem ilegível é erro, não zero silencioso), e aqui
-// o mesmo vale para "cortada", não só para "ilegível".
+// Quando alguma janela sozinha já contribuiu em mais repositórios do que o
+// teto por consulta, essa janela viria cortada calada — GitHub ordena por
+// contribuição e trunca. Em vez disso o erro nomeia a janela e o corte:
+// RN-04 do profile já cobrava isso do CommitCount local (contagem ilegível é
+// erro, não zero silencioso), e aqui o mesmo vale para "cortada".
 func (source *CLI) AccountCommitCountByRepository(ctx context.Context, since time.Time, until time.Time) ([]RepositoryCommitCount, error) {
+	totals := make(map[string]RepositoryCommitCount)
+
+	for _, piece := range windows(since, until) {
+		counts, err := source.repositoryContributions(ctx, piece.from, piece.until)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, count := range counts {
+			merged := totals[count.Repository]
+			merged.Repository = count.Repository
+			merged.Private = count.Private
+			merged.Count += count.Count
+			totals[count.Repository] = merged
+		}
+	}
+
+	counts := make([]RepositoryCommitCount, 0, len(totals))
+	for _, count := range totals {
+		counts = append(counts, count)
+	}
+
+	sort.Slice(counts, func(i int, j int) bool {
+		if counts[i].Count != counts[j].Count {
+			return counts[i].Count > counts[j].Count
+		}
+
+		return counts[i].Repository < counts[j].Repository
+	})
+
+	return counts, nil
+}
+
+func (source *CLI) repositoryContributions(ctx context.Context, from time.Time, until time.Time) ([]RepositoryCommitCount, error) {
 	result, err := source.commands.Run(ctx, "", "gh", "api", "graphql",
 		"-f", "query="+repositoryContributionsQuery,
-		"-f", "from="+since.Format(time.RFC3339),
+		"-f", "from="+from.Format(time.RFC3339),
 		"-f", "to="+until.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -330,8 +386,9 @@ func (source *CLI) AccountCommitCountByRepository(ctx context.Context, since tim
 
 	if len(listed) < collection.TotalRepositoriesWithContributedCommits {
 		return nil, fmt.Errorf(
-			"a conta contribuiu em %d repositórios nesse período, e --by-repo só traz até %d; peça um período mais curto",
-			collection.TotalRepositoriesWithContributedCommits, maxRepositoriesPerQuery)
+			"a conta contribuiu em %d repositórios entre %s e %s, e --by-repo só traz até %d por consulta; peça um período mais curto",
+			collection.TotalRepositoriesWithContributedCommits,
+			from.Format(dateOnly), until.Format(dateOnly), maxRepositoriesPerQuery)
 	}
 
 	counts := make([]RepositoryCommitCount, 0, len(listed))
@@ -342,14 +399,6 @@ func (source *CLI) AccountCommitCountByRepository(ctx context.Context, since tim
 			Count:      entry.Contributions.TotalCount,
 		})
 	}
-
-	sort.Slice(counts, func(i int, j int) bool {
-		if counts[i].Count != counts[j].Count {
-			return counts[i].Count > counts[j].Count
-		}
-
-		return counts[i].Repository < counts[j].Repository
-	})
 
 	return counts, nil
 }

@@ -597,17 +597,13 @@ func TestAccountCommitCountByRepositorySeparatesHavingNoCredentialFromBeingRefus
 			name:   "servidor recusou",
 			result: exec.Result{Code: 1, Output: "gh: Bad credentials (HTTP 401)"},
 		},
-		{
-			name:   "periodo passa de um ano",
-			result: exec.Result{Code: 1, Output: "gh: The total time spanned by 'from' and 'to' must not exceed 1 year"},
-		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			commands := exectest.NewRunner(exectest.Response{Result: test.result})
 
-			_, err := NewCLI(commands).AccountCommitCountByRepository(t.Context(), aDay(t, "2024-01-01"), aDay(t, "2026-08-23"))
+			_, err := NewCLI(commands).AccountCommitCountByRepository(t.Context(), aDay(t, "2026-08-01"), aDay(t, "2026-08-23"))
 
 			if err == nil {
 				t.Fatal("todos os casos sao erro")
@@ -619,6 +615,78 @@ func TestAccountCommitCountByRepositorySeparatesHavingNoCredentialFromBeingRefus
 				t.Errorf("erro = %v; ha credencial, o problema e outro", err)
 			}
 		})
+	}
+}
+
+func TestAccountCommitCountByRepositorySplitsAPeriodLongerThanAYear(t *testing.T) {
+	since, until := aDay(t, "2024-01-01"), aDay(t, "2025-06-15")
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: byRepository(1, repositoryEntry("LHPalma/gitarias", true, 100))}},
+		exectest.Response{Result: exec.Result{Output: byRepository(1, repositoryEntry("LHPalma/gitarias", true, 50))}},
+	)
+
+	counts, err := NewCLI(commands).AccountCommitCountByRepository(t.Context(), since, until)
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if len(commands.Calls) != 2 {
+		t.Fatalf("chamadas = %d, o periodo passa de um ano e a api nao aceita isso numa consulta so", len(commands.Calls))
+	}
+	if len(counts) != 1 || counts[0].Count != 150 {
+		t.Errorf("contagens = %+v, queria as duas janelas somadas no mesmo repositorio", counts)
+	}
+}
+
+func TestAccountCommitCountByRepositoryNeverAsksAWindowPastUntil(t *testing.T) {
+	since, until := aDay(t, "2024-01-01"), aDay(t, "2025-06-15")
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: byRepository(0, "")}},
+		exectest.Response{Result: exec.Result{Output: byRepository(0, "")}},
+	)
+
+	NewCLI(commands).AccountCommitCountByRepository(t.Context(), since, until)
+
+	last := strings.Join(commands.Calls[len(commands.Calls)-1].Args, " ")
+	if !strings.Contains(last, "to="+until.Format(time.RFC3339)) {
+		t.Errorf("ultima chamada = %q; a ultima janela tem de parar em until, nunca passar dele", last)
+	}
+}
+
+func TestAccountCommitCountByRepositoryMergesTheSameRepositoryAcrossWindows(t *testing.T) {
+	since, until := aDay(t, "2024-01-01"), aDay(t, "2025-06-15")
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Output: byRepository(2,
+			repositoryEntry("LHPalma/gitarias", true, 100)+","+repositoryEntry("LHPalma/ticketerias", false, 5))}},
+		exectest.Response{Result: exec.Result{Output: byRepository(1, repositoryEntry("LHPalma/gitarias", true, 50))}},
+	)
+
+	counts, err := NewCLI(commands).AccountCommitCountByRepository(t.Context(), since, until)
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if len(counts) != 2 {
+		t.Fatalf("contagens = %+v; gitarias apareceu nas duas janelas e ticketerias so numa, mas sao dois repositorios so", counts)
+	}
+
+	first := RepositoryCommitCount{Repository: "LHPalma/gitarias", Private: true, Count: 150}
+	if counts[0] != first {
+		t.Errorf("primeiro = %+v, queria %+v; a soma das duas janelas no mesmo repositorio", counts[0], first)
+	}
+}
+
+func TestAccountCommitCountByRepositoryStopsAtTheFirstWindowThatFails(t *testing.T) {
+	since, until := aDay(t, "2024-01-01"), aDay(t, "2026-08-23")
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Code: 1, Output: "gh: Bad credentials (HTTP 401)"}})
+
+	_, err := NewCLI(commands).AccountCommitCountByRepository(t.Context(), since, until)
+
+	if err == nil {
+		t.Fatal("a primeira janela falhou, e isso e erro")
+	}
+	if len(commands.Calls) != 1 {
+		t.Errorf("chamadas = %d, a falha na primeira janela nao pode deixar tentar as seguintes", len(commands.Calls))
 	}
 }
 
