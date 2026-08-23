@@ -29,6 +29,14 @@ func (CommandRunner) RunWithEnv(ctx context.Context, env []string, args ...strin
 	return run(ctx, command)
 }
 
+func (CommandRunner) RunWithInputAndEnv(ctx context.Context, input string, env []string, args ...string) (string, error) {
+	command := exec.CommandContext(ctx, "git", args...)
+	command.Stdin = strings.NewReader(input)
+	command.Env = append(os.Environ(), env...)
+
+	return run(ctx, command)
+}
+
 func run(ctx context.Context, command *exec.Cmd) (string, error) {
 	var stderr bytes.Buffer
 	command.Stderr = &stderr

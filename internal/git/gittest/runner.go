@@ -44,3 +44,11 @@ func (runner *Runner) RunWithEnv(ctx context.Context, env []string, args ...stri
 
 	return runner.Run(ctx, args...)
 }
+
+func (runner *Runner) RunWithInputAndEnv(ctx context.Context, input string, env []string, args ...string) (string, error) {
+	key := strings.Join(args, " ")
+	runner.Inputs[key] = input
+	runner.Envs[key] = env
+
+	return runner.Run(ctx, args...)
+}

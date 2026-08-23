@@ -49,6 +49,15 @@ func TestCommandRunnerWithEnvRefusesAContextAlreadyCancelled(t *testing.T) {
 	}
 }
 
+func TestCommandRunnerWithInputAndEnvRefusesAContextAlreadyCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if _, err := (CommandRunner{}).RunWithInputAndEnv(ctx, "entrada", nil, "hash-object", "--stdin"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("erro = %v, queria o cancelamento", err)
+	}
+}
+
 // TestCommandRunnerWithEnvPassesTheEnvironment prova o mecanismo que
 // internal/author depende: a identidade viaja pelo ambiente do processo, não
 // por um argumento que algum comando do git interpolaria numa string de
@@ -63,5 +72,40 @@ func TestCommandRunnerWithEnvPassesTheEnvironment(t *testing.T) {
 	}
 	if !strings.Contains(output, "Fake Name <fake@fake.com>") {
 		t.Errorf("saída = %q, queria a identidade vinda do ambiente", output)
+	}
+}
+
+// TestCommandRunnerWithInputAndEnvPassesBoth prova o mecanismo que
+// internal/diff depende para o Verify: git apply --check --cached precisa do
+// patch pelo stdin (RN-06, sem caminho de arquivo interpolado) e do índice
+// temporário pelo ambiente (GIT_INDEX_FILE), na mesma chamada.
+// hash-object --stdin prova o stdin (o SHA1 devolvido depende só do
+// conteúdo lido); var GIT_AUTHOR_IDENT prova o ambiente, como o teste acima
+// — juntos, na mesma chamada de RunWithInputAndEnv.
+func TestCommandRunnerWithInputAndEnvPassesBoth(t *testing.T) {
+	output, err := (CommandRunner{}).RunWithInputAndEnv(t.Context(),
+		"conteudo de teste\n",
+		[]string{"GIT_AUTHOR_NAME=Fake Name", "GIT_AUTHOR_EMAIL=fake@fake.com"},
+		"hash-object", "--stdin")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	want, err := (CommandRunner{}).RunWithInput(t.Context(), "conteudo de teste\n", "hash-object", "--stdin")
+	if err != nil {
+		t.Fatalf("não esperava erro ao calcular o esperado, veio %v", err)
+	}
+	if output != want {
+		t.Errorf("hash = %q, queria %q — o stdin não chegou igual com o ambiente junto", output, want)
+	}
+
+	identity, err := (CommandRunner{}).RunWithInputAndEnv(t.Context(), "",
+		[]string{"GIT_AUTHOR_NAME=Fake Name", "GIT_AUTHOR_EMAIL=fake@fake.com"},
+		"var", "GIT_AUTHOR_IDENT")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if !strings.Contains(identity, "Fake Name <fake@fake.com>") {
+		t.Errorf("saída = %q, queria a identidade vinda do ambiente", identity)
 	}
 }
