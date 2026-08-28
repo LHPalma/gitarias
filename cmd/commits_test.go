@@ -488,6 +488,294 @@ func TestCommitsCommandHelpNeverRunsGit(t *testing.T) {
 	}
 }
 
+func sevenCommitsHistory() map[string]gittest.Response {
+	lines := make([]string, 7)
+	for index := range lines {
+		sha := strings.Repeat(strconv.Itoa(index), 40)
+		lines[index] = sha + "\x00commit " + strconv.Itoa(index)
+	}
+
+	return history("main", strings.Join(lines, "\n"))
+}
+
+func TestCommitsBisectFindsTheFirstFailingCommitWithFewCalls(t *testing.T) {
+	// 7 commits, quebra no indice 4: testa o 3 (verde), o 5 (vermelho) e o 4
+	// (vermelho) — a extracao so acontece para esses tres, nao para os sete.
+	outcomes := []exectest.Response{
+		{Result: exec.Result{Code: 0}},
+		{Result: exec.Result{Code: 1, Output: "quebrou"}},
+		{Result: exec.Result{Code: 1, Output: "quebrou"}},
+	}
+
+	result := checking(t, sevenCommitsHistory(), outcomes, "commits", "bisect", "main", "--", "go", "test", "./...")
+
+	if result.err == nil {
+		t.Fatal("achar um culpado tem de virar saída 1")
+	}
+	if !strings.Contains(result.err.Error(), "commit 4") {
+		t.Errorf("erro = %v, queria o culpado nomeado", result.err)
+	}
+	if !strings.Contains(result.stdout, "Primeiro commit ruim") {
+		t.Errorf("saída = %q, queria a conclusão", result.stdout)
+	}
+
+	extractions := 0
+	for _, call := range result.calls {
+		if strings.HasPrefix(call, "archive") {
+			extractions++
+		}
+	}
+	if extractions != 3 {
+		t.Errorf("extrações = %d, a busca binária em 7 cabe em 3, não 7", extractions)
+	}
+}
+
+func TestCommitsBisectWithNothingFailing(t *testing.T) {
+	result := checking(t, threeCommits(), passing(2), "commits", "bisect", "main", "--", "go", "test")
+
+	if result.err != nil {
+		t.Fatalf("nenhum culpado não é falha, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "Nenhum dos") {
+		t.Errorf("saída = %q, queria a conclusão de que ninguém falhou", result.stdout)
+	}
+}
+
+func TestCommitsBisectWithNothingInTheRange(t *testing.T) {
+	result := checking(t, history("main", ""), nil, "commits", "bisect", "main", "--", "go", "test")
+
+	if result.err != nil {
+		t.Fatalf("intervalo vazio não é falha, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "Nenhum commit") {
+		t.Errorf("saída = %q, queria a mensagem específica", result.stdout)
+	}
+}
+
+func TestCommitsBisectRefusesWithoutTheDash(t *testing.T) {
+	result := checking(t, threeCommits(), nil, "commits", "bisect", "main")
+
+	if result.err == nil {
+		t.Fatal("sem -- não há comando a rodar")
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a validação vem antes de tocar no git", result.calls)
+	}
+}
+
+func TestCommitsBisectHidesTheOutputOfWhatPassedUnlessVerbose(t *testing.T) {
+	outcomes := []exectest.Response{{Result: exec.Result{Output: "ok, tudo certo"}}}
+
+	result := checking(t, oneCommit(), outcomes, "commits", "bisect", "main", "--", "go", "build")
+
+	if strings.Contains(result.stdout, "ok, tudo certo") {
+		t.Errorf("saída = %q, sem --verbose o que passou não polui o relatório", result.stdout)
+	}
+
+	verbose := checking(t, oneCommit(), outcomes, "commits", "bisect", "main", "--verbose", "--", "go", "build")
+
+	if !strings.Contains(verbose.stdout, "ok, tudo certo") {
+		t.Errorf("saída = %q, com --verbose a saída de quem passou aparece", verbose.stdout)
+	}
+}
+
+func TestCommitsBisectUsesArchiveByDefaultAndWorktreeOnRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "padrao", args: []string{"commits", "bisect", "main", "--", "go", "test"}, want: "archive"},
+		{name: "worktree", args: []string{"commits", "bisect", "main", "--worktree", "--", "go", "test"}, want: "worktree add"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := checking(t, history("main", "aaa\x00um"), passing(1), test.args...)
+
+			var used bool
+			for _, call := range result.calls {
+				if strings.HasPrefix(call, test.want) {
+					used = true
+				}
+			}
+			if !used {
+				t.Errorf("chamadas = %v, queria a extração por %q", result.calls, test.want)
+			}
+		})
+	}
+}
+
+func TestCommitsBisectJSON(t *testing.T) {
+	outcomes := []exectest.Response{
+		{Result: exec.Result{Code: 0}},
+		{Result: exec.Result{Code: 1, Output: "quebrou"}},
+	}
+
+	result := checking(t, threeCommits(), outcomes, "commits", "bisect", "main", "--format", "json", "--", "go", "test")
+
+	if result.err == nil {
+		t.Fatal("achar um culpado tem de virar saída 1")
+	}
+
+	var document bisectedDocument
+	if err := json.Unmarshal([]byte(result.stdout), &document); err != nil {
+		t.Fatalf("a saída tem de ser json válido, veio %q: %v", result.stdout, err)
+	}
+
+	if document.Base != "main" {
+		t.Errorf("base = %q, o metadado viaja no envelope", document.Base)
+	}
+	if document.Total != 3 {
+		t.Errorf("total = %d, queria o tamanho do intervalo inteiro", document.Total)
+	}
+	if document.Culprit == nil {
+		t.Fatal("culpado = nil, queria o commit que falhou")
+	}
+	if document.Culprit.Outcome != "failed" {
+		t.Errorf("estado do culpado = %q, queria failed", document.Culprit.Outcome)
+	}
+}
+
+func TestCommitsBisectJSONWithoutACulprit(t *testing.T) {
+	result := checking(t, threeCommits(), passing(2), "commits", "bisect", "main", "--format", "json", "--", "go", "test")
+
+	var document bisectedDocument
+	if err := json.Unmarshal([]byte(result.stdout), &document); err != nil {
+		t.Fatalf("a saída tem de ser json válido, veio %q: %v", result.stdout, err)
+	}
+	if document.Culprit != nil {
+		t.Errorf("culpado = %+v, ninguém falhou", document.Culprit)
+	}
+}
+
+func TestCommitsBisectCSVMarksTheCulprit(t *testing.T) {
+	outcomes := []exectest.Response{
+		{Result: exec.Result{Code: 0}},
+		{Result: exec.Result{Code: 1}},
+	}
+
+	result := checking(t, threeCommits(), outcomes, "commits", "bisect", "main", "--format", "csv", "--", "go", "test")
+
+	lines := strings.Split(strings.TrimRight(result.stdout, "\n"), "\n")
+	if lines[0] != "sha,assunto,código,estado,culpado" {
+		t.Errorf("cabeçalho = %q", lines[0])
+	}
+
+	var marked int
+	for _, line := range lines[1:] {
+		if strings.HasSuffix(line, ",sim") {
+			marked++
+		}
+	}
+	if marked != 1 {
+		t.Errorf("linhas marcadas = %d, só o culpado pode carregar o sim", marked)
+	}
+}
+
+func TestCommitsBisectOutsideRepository(t *testing.T) {
+	responses := map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Err: errNotARepository}}
+
+	result := checking(t, responses, nil, "commits", "bisect", "main", "--", "go", "test")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if result.stdout != "" {
+		t.Errorf("RN-09: nada pode ir para o stdout, veio %q", result.stdout)
+	}
+}
+
+func TestCommitsBisectRefusesTheFlagsOutsideTheirFormats(t *testing.T) {
+	result := checking(t, threeCommits(), nil, "commits", "bisect", "main", "--format", "yaml", "--", "go")
+
+	if result.err == nil {
+		t.Fatal("formato desconhecido tem de virar erro")
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a validação vem antes de tocar no git", result.calls)
+	}
+}
+
+func TestCommitsBisectPropagatesTheUnknownBase(t *testing.T) {
+	responses := map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Output: "true"}}
+
+	if checking(t, responses, nil, "commits", "bisect", "inexistente", "--", "go", "test").err == nil {
+		t.Fatal("base desconhecida tem de virar erro")
+	}
+}
+
+func TestCommitsBisectPropagatesTheExtractionFailure(t *testing.T) {
+	runner := gittest.NewRunner(history("main", "aaa\x00um"))
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+
+	command := NewRootCommand(runner, exectest.NewRunner(exectest.Response{}), noWeb(), noFinder(), noNotices)
+	command.SetOut(stdout)
+	command.SetErr(stderr)
+	command.SetArgs([]string{"commits", "bisect", "main", "--", "go", "test"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha ao extrair a árvore tem de derrubar a busca")
+	}
+	if stdout.String() != "" {
+		t.Errorf("RN-09: nada pode ir para o stdout, veio %q", stdout.String())
+	}
+}
+
+func TestCommitsBisectSuggestsItsOwnFileNameWhenRefusingADirectory(t *testing.T) {
+	directory := t.TempDir() + string(filepath.Separator)
+
+	result := checking(t, threeCommits(), passing(2), "commits", "bisect", "main", "--format", "csv", "--output", directory, "--", "go", "test")
+
+	if result.err == nil {
+		t.Fatal("caminho terminado em separador nomeia um diretório")
+	}
+	if !strings.Contains(result.err.Error(), "bisect.csv") {
+		t.Errorf("erro = %v, o exemplo tem de ser do comando que rodou", result.err)
+	}
+}
+
+func failedBisectedTable() bisectedTable {
+	culprit := commits.Result{Commit: commits.Commit{SHA: "aaa", Subject: "um"}, Code: 1, Output: "diagnóstico"}
+
+	return bisectedTable{base: "main", result: commits.BisectResult{Total: 3, Tested: []commits.Result{culprit}, Culprit: &culprit}}
+}
+
+func TestBisectedTablePropagatesTheWriteFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		data bisectedTable
+	}{
+		{name: "sem commit no intervalo", data: bisectedTable{base: "main"}},
+		{name: "com commit vermelho e o culpado", data: failedBisectedTable()},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.data.text(brokenWriter{})
+
+			if err == nil {
+				t.Fatal("falha de escrita tem de virar erro")
+			}
+			if !strings.Contains(err.Error(), "disco cheio") {
+				t.Errorf("erro = %v, queria o da escrita", err)
+			}
+		})
+	}
+}
+
+func TestBisectedTablePropagatesTheFailureOfEveryLine(t *testing.T) {
+	for allowed := range 2 {
+		t.Run(strconv.Itoa(allowed), func(t *testing.T) {
+			err := failedBisectedTable().text(&countingWriter{allowed: allowed})
+
+			if err == nil {
+				t.Fatalf("com %d escrita(s) liberada(s) o resto falha e o erro tem de subir", allowed)
+			}
+		})
+	}
+}
+
 func failedTable() checkedTable {
 	return checkedTable{
 		base:    "main",

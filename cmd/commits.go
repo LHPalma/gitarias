@@ -16,6 +16,12 @@ type commitsCheckOptions struct {
 	worktree bool
 }
 
+type commitsBisectOptions struct {
+	formatOptions
+	verbose  bool
+	worktree bool
+}
+
 func newCommitsCommand(runner git.Runner, commands exec.Runner) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "commits",
@@ -23,6 +29,7 @@ func newCommitsCommand(runner git.Runner, commands exec.Runner) *cobra.Command {
 	}
 
 	command.AddCommand(newCommitsCheckCommand(runner, commands))
+	command.AddCommand(newCommitsBisectCommand(runner, commands))
 
 	return command
 }
@@ -128,4 +135,80 @@ func failure(data checkedTable) error {
 	}
 
 	return fmt.Errorf("%d de %d commits não se sustentam sozinhos", failed, len(data.results))
+}
+
+func newCommitsBisectCommand(runner git.Runner, commands exec.Runner) *cobra.Command {
+	var options commitsBisectOptions
+
+	command := &cobra.Command{
+		Use:   "bisect <base> -- <comando>",
+		Short: "Acha o primeiro commit de <base>..HEAD que não se sustenta sozinho, sem testar todos",
+		RunE: func(command *cobra.Command, args []string) error {
+			repo := commits.NewRepo(runner, commands)
+
+			return runCommitsBisect(command, repo, extractor(runner, options.worktree), args, options)
+		},
+	}
+
+	command.Flags().BoolVar(&options.verbose, "verbose", false, "mostra também a saída dos commits testados que passaram")
+	command.Flags().BoolVar(&options.worktree, "worktree", false,
+		"extrai com git worktree em vez de git archive, para comando que precisa do .git; deixa de valer a garantia de não escrever no repositório")
+	options.register(command)
+
+	return command
+}
+
+func runCommitsBisect(command *cobra.Command, repo *commits.Repo, extraction commits.Extractor, args []string, options commitsBisectOptions) error {
+	base, verification, err := splitAtDash(command, args)
+	if err != nil {
+		return err
+	}
+
+	chosen, err := options.resolve(command)
+	if err != nil {
+		return err
+	}
+
+	ctx := command.Context()
+
+	if err := repo.Ensure(ctx); err != nil {
+		return err
+	}
+
+	list, err := repo.Range(ctx, base)
+	if err != nil {
+		return err
+	}
+
+	result, err := repo.Bisect(ctx, list, extraction, verification[0], verification[1:])
+	if err != nil {
+		return err
+	}
+
+	data := bisectedTable{base: base, command: verification, result: result, verbose: options.verbose}
+
+	if err := emitBisected(command, chosen, options, data); err != nil {
+		return err
+	}
+
+	return bisectFailure(data)
+}
+
+func emitBisected(command *cobra.Command, chosen rendering, options commitsBisectOptions, data bisectedTable) error {
+	if chosen.format.Delimited() {
+		fmt.Fprintf(command.ErrOrStderr(), "Bisectando %d %s possíveis.\n",
+			data.result.Total, ui.Plural(data.result.Total, "commit", "commits"))
+	}
+
+	return emit(command.OutOrStdout(), options.output, "bisect", chosen, data)
+}
+
+func bisectFailure(data bisectedTable) error {
+	if data.result.Culprit == nil {
+		return nil
+	}
+
+	culprit := data.result.Culprit
+
+	return fmt.Errorf("primeiro commit ruim: %s %s", culprit.Commit.Short(), culprit.Commit.Subject)
 }
