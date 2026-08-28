@@ -344,6 +344,54 @@ escreve.**
 
 A saída é 1 se qualquer commit falhar, 0 se todos passarem.
 
+### `gtr commits bisect`
+
+Acha o **primeiro** commit de um intervalo que não se sustenta sozinho, testando
+`log₂(N)` commits em vez de todos os `N`. Mesma extração isolada do
+`commits check` — nada é escrito no repositório, `HEAD` fica onde estava —, só
+troca a varredura exaustiva por busca binária.
+
+```
+$ gtr commits bisect main -- go test ./...
+Bisectando 47 commits possíveis: 6 testados.
+
+  verde     a1b2c3d  feat: add the third retry
+  verde     4d5e6f7  feat: add the fourth retry
+  VERMELHO  8a9b0c1  refactor: extract the retry loop
+      --- FAIL: TestRetry (0.00s)
+  verde     2b3c4d5  feat: add the fifth retry
+  VERMELHO  6e7f8a9  fix: tighten the retry window
+  VERMELHO  0c1d2e3  feat: add the sixth retry
+
+Primeiro commit ruim: 8a9b0c1  refactor: extract the retry loop
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--verbose` | `false` | Mostra também a saída dos commits testados que passaram |
+| `--worktree` | `false` | Extrai com `git worktree` em vez de `git archive`, para comando que precisa do `.git` |
+| `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
+| `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
+| `--separator <s>` | `,` | Só com `--format csv`. Aceita `,` `;` `\|` e `\t` |
+| `--no-header` | `false` | Só com `csv` ou `tsv`. Omite a linha de nomes das colunas |
+
+**A mesma suposição do `git bisect`, e não mais que ela:** o intervalo tem no
+máximo uma transição de verde para vermelho, andando do commit mais antigo
+para o mais novo — sem essa suposição, a busca binária não converge para nada
+que se sustente. Onde `commits check` responde "quais dos N não se sustentam
+sozinhos", `commits bisect` responde só "qual foi o primeiro" — a mesma
+pergunta que motiva o `git bisect run`, só que sem tocar no `HEAD`, no índice
+ou na árvore de trabalho: `git bisect` faz `checkout` de cada candidato no
+próprio repositório, o que empresta o estado da máquina para o teste e exige
+`reset`/`bisect reset` para voltar; aqui cada candidato é extraído para um
+diretório descartável, como no `check`, e dá pra rodar com trabalho em
+andamento sem guardar nada antes.
+
+**A tabela mostra só o que foi testado**, não o intervalo inteiro — a coluna
+`culpado` marca qual dos testados foi o achado. Sem nenhum vermelho, a saída
+diz que ninguém falhou e o código de saída é 0; a saída é 1 quando um culpado
+é encontrado.
+
 ### `gtr doctor`
 
 Confere se o `gtr` funciona aqui, agora.
@@ -1407,7 +1455,7 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 
 ## Estado
 
-No ar: `branches` (com `--tree`), `worktrees`, `commits check`, `ignore list`,
+No ar: `branches` (com `--tree`), `worktrees`, `commits check`, `commits bisect`, `ignore list`,
 `licenses`, `doctor`, `undo`, `author`, `weight`, `churn`, `setup`, `pr list`
 e `stats`. Todos aceitam `--format`, menos o `licenses`, que imprime texto de
 licença, e o `undo` e o `author`, que são interativos.
