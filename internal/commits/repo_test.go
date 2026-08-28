@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -247,6 +248,176 @@ func TestCheckPropagatesTheCommandThatCannotStart(t *testing.T) {
 	}
 }
 
+func sevenCommits() []Commit {
+	list := make([]Commit, 7)
+	for index := range list {
+		list[index] = Commit{SHA: strconv.Itoa(index), Subject: "commit " + strconv.Itoa(index)}
+	}
+
+	return list
+}
+
+func TestBisectFindsTheFirstFailingCommitWithoutTestingEveryOne(t *testing.T) {
+	// Sequência da busca binária sobre 7 commits com a quebra no índice 4:
+	// testa o 3 (verde), o 5 (vermelho), o 4 (vermelho) — três, não sete.
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Code: 0}},
+		exectest.Response{Result: exec.Result{Code: 1}},
+		exectest.Response{Result: exec.Result{Code: 1}},
+	)
+
+	result, err := NewRepo(gittest.NewRunner(nil), commands).Bisect(t.Context(), sevenCommits(), &recordingExtractor{}, "go", nil)
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if result.Total != 7 {
+		t.Errorf("total = %d, queria o tamanho da lista inteira", result.Total)
+	}
+	if len(result.Tested) != 3 {
+		t.Fatalf("testados = %+v, a busca binaria em 7 cabe em 3, nao 7", result.Tested)
+	}
+	if result.Culprit == nil || result.Culprit.Commit.SHA != "4" {
+		t.Fatalf("culpado = %+v, queria o indice 4", result.Culprit)
+	}
+}
+
+func TestBisectWithNothingFailing(t *testing.T) {
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Code: 0}},
+		exectest.Response{Result: exec.Result{Code: 0}},
+		exectest.Response{Result: exec.Result{Code: 0}},
+	)
+	list := sevenCommits()[:4]
+
+	result, err := NewRepo(gittest.NewRunner(nil), commands).Bisect(t.Context(), list, &recordingExtractor{}, "go", nil)
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if result.Culprit != nil {
+		t.Errorf("culpado = %+v, ninguem falhou", result.Culprit)
+	}
+	if len(result.Tested) != 3 {
+		t.Errorf("testados = %+v, queria os tres passos ate esgotar o intervalo", result.Tested)
+	}
+}
+
+func TestBisectWithEverythingFailingPicksTheOldest(t *testing.T) {
+	commands := exectest.NewRunner(
+		exectest.Response{Result: exec.Result{Code: 1}},
+		exectest.Response{Result: exec.Result{Code: 1}},
+	)
+	list := sevenCommits()[:4]
+
+	result, err := NewRepo(gittest.NewRunner(nil), commands).Bisect(t.Context(), list, &recordingExtractor{}, "go", nil)
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if result.Culprit == nil || result.Culprit.Commit.SHA != "0" {
+		t.Fatalf("culpado = %+v, quando tudo falha o culpado e o mais antigo da lista", result.Culprit)
+	}
+}
+
+func TestBisectWithOneCommit(t *testing.T) {
+	tests := []struct {
+		name        string
+		code        int
+		wantCulprit bool
+	}{
+		{name: "passa", code: 0, wantCulprit: false},
+		{name: "falha", code: 1, wantCulprit: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Code: test.code}})
+
+			result, err := NewRepo(gittest.NewRunner(nil), commands).Bisect(
+				t.Context(), []Commit{{SHA: "aaa"}}, &recordingExtractor{}, "go", nil)
+
+			if err != nil {
+				t.Fatalf("nao esperava erro, veio %v", err)
+			}
+			if (result.Culprit != nil) != test.wantCulprit {
+				t.Errorf("culpado = %+v, queria presenca = %v", result.Culprit, test.wantCulprit)
+			}
+			if len(result.Tested) != 1 {
+				t.Errorf("testados = %+v, um commit so pode testar uma vez", result.Tested)
+			}
+		})
+	}
+}
+
+func TestBisectWithoutCommits(t *testing.T) {
+	result, err := NewRepo(gittest.NewRunner(nil), exectest.NewRunner()).Bisect(t.Context(), nil, &recordingExtractor{}, "go", nil)
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if result.Culprit != nil || len(result.Tested) != 0 || result.Total != 0 {
+		t.Errorf("resultado = %+v, lista vazia nao testa nada", result)
+	}
+}
+
+func TestBisectRunsInsideTheExtractedTreeAndCleansUp(t *testing.T) {
+	extractor := &recordingExtractor{}
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Code: 1}}, exectest.Response{Result: exec.Result{Code: 1}})
+
+	_, err := NewRepo(gittest.NewRunner(nil), commands).Bisect(t.Context(), sevenCommits()[:4], extractor, "go", nil)
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if len(extractor.extracted) != len(extractor.released) {
+		t.Errorf("extraidos = %v, liberados = %v; todo extraido tem de ser solto", extractor.extracted, extractor.released)
+	}
+	if len(extractor.released) == 0 {
+		t.Fatal("nada foi extraido, entao o teste passaria de graca")
+	}
+
+	workspace := filepath.Dir(extractor.released[0])
+	if _, err := os.Stat(workspace); !os.IsNotExist(err) {
+		t.Errorf("o diretorio temporario sobreviveu a busca: %v", err)
+	}
+}
+
+func TestBisectPropagatesTheExtractionFailure(t *testing.T) {
+	extractor := &recordingExtractor{err: errors.New("sha nao existe")}
+
+	_, err := NewRepo(gittest.NewRunner(nil), exectest.NewRunner()).Bisect(t.Context(), sevenCommits()[:4], extractor, "go", nil)
+
+	if err == nil {
+		t.Fatal("falha na extracao tem de virar erro")
+	}
+}
+
+func TestBisectPropagatesTheCommandThatCannotStart(t *testing.T) {
+	commands := exectest.NewRunner(exectest.Response{Err: errors.New("executable file not found")})
+
+	_, err := NewRepo(gittest.NewRunner(nil), commands).Bisect(t.Context(), []Commit{{SHA: "aaa"}}, &recordingExtractor{}, "inexistente", nil)
+
+	if err == nil {
+		t.Fatal("comando que nem comeca e falha da busca")
+	}
+}
+
+func TestBisectStopsWhenTheContextIsCancelledMidway(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	commands := &cancellingRunner{cancel: cancel, after: 1}
+	extractor := &recordingExtractor{}
+
+	_, err := NewRepo(gittest.NewRunner(nil), commands).Bisect(ctx, sevenCommits(), extractor, "go", nil)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("erro = %v, queria o cancelamento", err)
+	}
+	if commands.calls != 1 {
+		t.Errorf("chamadas = %d, a busca tinha de parar no passo seguinte ao cancelamento", commands.calls)
+	}
+}
+
 func TestCheckWithoutCommits(t *testing.T) {
 	results, err := NewRepo(gittest.NewRunner(nil), exectest.NewRunner()).Check(t.Context(), nil, &recordingExtractor{}, "go", nil)
 
@@ -281,6 +452,17 @@ func TestCheckPropagatesTheWorkspaceItCannotCreate(t *testing.T) {
 	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "nao-existe"))
 
 	_, err := NewRepo(gittest.NewRunner(nil), exectest.NewRunner()).Check(
+		t.Context(), []Commit{{SHA: "aaa"}}, &recordingExtractor{}, "go", nil)
+
+	if err == nil {
+		t.Fatal("sem diretorio temporario nao ha onde extrair; tem de virar erro")
+	}
+}
+
+func TestBisectPropagatesTheWorkspaceItCannotCreate(t *testing.T) {
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "nao-existe"))
+
+	_, err := NewRepo(gittest.NewRunner(nil), exectest.NewRunner()).Bisect(
 		t.Context(), []Commit{{SHA: "aaa"}}, &recordingExtractor{}, "go", nil)
 
 	if err == nil {
