@@ -3,6 +3,7 @@ package exec
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -33,8 +34,48 @@ func TestCommandRunnerTreatsANonZeroExitAsAResult(t *testing.T) {
 }
 
 func TestCommandRunnerFailsWhenTheCommandCannotStart(t *testing.T) {
-	if _, err := (CommandRunner{}).Run(t.Context(), t.TempDir(), "comando-que-nao-existe-em-lugar-nenhum"); err == nil {
+	_, err := (CommandRunner{}).Run(t.Context(), t.TempDir(), "comando-que-nao-existe-em-lugar-nenhum")
+	if err == nil {
 		t.Fatal("comando inexistente e falha da ferramenta, nao commit vermelho")
+	}
+
+	// Achado testando no Windows: cp/rm/mv do PowerShell sao alias do
+	// shell, nao executavel, e o erro cru do Go nao dizia isso a quem
+	// rodou. A mensagem melhorada tem de nomear o comando e sugerir o
+	// caminho completo, sem esconder o erro original do Go.
+	if !strings.Contains(err.Error(), "comando-que-nao-existe-em-lugar-nenhum") {
+		t.Errorf("erro = %v, queria o nome do comando nomeado", err)
+	}
+	if !strings.Contains(err.Error(), "caminho completo") {
+		t.Errorf("erro = %v, queria a sugestao do caminho completo", err)
+	}
+	if !strings.Contains(err.Error(), "executable file not found") {
+		t.Errorf("erro = %v, o erro original do Go nao pode se perder", err)
+	}
+}
+
+func TestCommandRunnerPropagatesAFailureThatIsNotAMissingExecutable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permissão de execução em arquivo não existe no Windows do jeito que este teste espera")
+	}
+
+	directory := t.TempDir()
+	notExecutable := filepath.Join(directory, "sem-permissao")
+	if err := os.WriteFile(notExecutable, []byte("oi"), 0o644); err != nil {
+		t.Fatalf("não consegui montar o cenário: %v", err)
+	}
+
+	_, err := (CommandRunner{}).Run(t.Context(), directory, notExecutable)
+	if err == nil {
+		t.Fatal("arquivo sem permissão de execução tem de virar erro")
+	}
+
+	// Essa falha não é "não achei no PATH" — é "achei, mas não pude
+	// rodar" —, então a mensagem melhorada de ErrNotFound não pode
+	// aparecer aqui, sugerindo "caminho completo" para um problema que
+	// informar o caminho completo não resolve.
+	if strings.Contains(err.Error(), "caminho completo") {
+		t.Errorf("erro = %v, essa dica é só para o caso de executável não encontrado", err)
 	}
 }
 
