@@ -403,7 +403,9 @@ correção solto no topo.
 ```
 $ gtr overdub 8a9b0c1 -- gofmt -w retry.go -- go test ./...
 Isso vai reescrever 6 commits a partir de 8a9b0c1 "refactor: extract the retry loop".
-HEAD atual: 0c1d2e3 — se algo der errado, git reset --hard 0c1d2e3 desfaz.
+HEAD atual: 0c1d2e3. Se o conserto falhar no meio, o gtr tenta git rebase --abort
+sozinho; se isso também falhar, ou se o resultado final não agradar, git reset
+--hard 0c1d2e3 desfaz.
 
 Confirma? [y/N] y
 Consertado. Novo HEAD: 4f8a1c9
@@ -429,6 +431,7 @@ gtr overdub 8a9b0c1 -- gofmt -w retry.go -- go test ./...      # conserta e conf
 | Flag | Padrão | Efeito |
 |---|---|---|
 | `--until <sha>` | vazio | Até onde reescrever; vazio significa `HEAD` |
+| `--yes` | `false` | Pula a confirmação interativa — a única forma de chamar por script ou agente; use com cuidado |
 
 **Nunca passa pelo `--exec` da rebase.** `--exec` roda a string por um shell,
 e o comando de conserto é arbitrário — misturar os dois abriria a mesma
@@ -436,15 +439,39 @@ injeção que o `gtr author` já evita para a identidade. Em vez disso, a
 rebase para exatamente no commit apontado (um subcomando oculto do próprio
 `gtr`, `overdub-sequence-step`, troca só a linha dele de `pick` para `edit`
 no arquivo de todo — precisa estar no `PATH`, mesma exigência que o `gh` já
-tem), o comando de conserto roda direto pelo `internal/exec.Runner` — argv
-intacto, sem shell —, e só então o commit é emendado.
+tem, e conferida **antes** de tocar em qualquer coisa), o comando de conserto
+roda direto pelo `internal/exec.Runner` — argv intacto, sem shell —, e só
+então o commit é emendado.
+
+**`gtr` precisa estar no `PATH`, não só acessível pelo caminho com que você
+chamou.** A rebase interativa invoca `gtr overdub-sequence-step <sha>` de
+novo, e quem resolve esse nome é o `git`, pelo `PATH` — nunca pelo
+`./gtr` ou `..\gtr.exe` que você digitou. Sem isso no `PATH`, o `overdub`
+recusa de cara, com uma mensagem própria, em vez de deixar o `git` expor o
+erro cru do editor de sequência no meio da rebase.
 
 **Isso mexe em histórico de verdade**, ao contrário de `commits check` e
 `commits bisect`: o `HEAD` se move, e tudo depois do commit-alvo ganha hash
 novo, mesmo sem mudar de conteúdo — a mesma dança do `gtr author` e do
-`gtr ai-trailers strip`. A recuperação é a mesma delas: nenhum diário
-próprio, só o `git reset --hard` para o `HEAD` de antes, impresso na
-confirmação.
+`gtr ai-trailers strip`. Diferente delas, o comando de conserto é
+arbitrário e pode falhar no meio — achado testando contra um repositório
+real, com um `cp` que não existia no `PATH` do Windows: sem tratamento, a
+rebase ficava parada em `edit`, em `HEAD` destacado, com `.git/rebase-merge`
+no lugar. Hoje, qualquer falha do conserto — o comando não roda, sai
+diferente de zero, ou qualquer passo do `git` no meio falha — dispara
+`git rebase --abort` sozinho e volta para a branch onde você estava (a
+rebase sempre destaca o `HEAD` para poder fazer o reencaixe no final, então
+"abortar" sozinho não bastaria — precisa do `checkout` de volta também). Se
+mesmo esse desfazer falhar, o erro diz isso explicitamente, nunca em
+silêncio. A recuperação de última instância continua sendo a mesma do
+`gtr author`/`gtr ai-trailers strip`: `git reset --hard` para o `HEAD` de
+antes, impresso na confirmação.
+
+**Executável do conserto não achado no `PATH` tem mensagem própria.** No
+Windows/PowerShell, `cp`, `rm` e `mv` costumam ser só alias do shell, não
+executável — como o `overdub` nunca passa por um shell (de propósito), eles
+não resolvem. O erro nomeia o comando e sugere informar o caminho completo,
+em vez de só repassar o erro cru do Go.
 
 **Não funciona no commit raiz de um repositório** — `<sha>^` não existe
 quando `<sha>` não tem pai, e o git recusa a faixa. Consertar o primeiro
