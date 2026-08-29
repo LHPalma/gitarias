@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +13,32 @@ import (
 	"github.com/LHPalma/gitarias/internal/exec/exectest"
 	"github.com/LHPalma/gitarias/internal/git/gittest"
 )
+
+// TestMain garante um "gtr" achável no PATH para o pacote inteiro: o
+// overdub agora falha rápido se não encontra o próprio binário no PATH
+// (ensureGtrOnPath), e sem isso todo teste que chega até lá quebraria por
+// um motivo alheio ao que está sendo testado. O stub nunca é executado —
+// só precisa existir e ser executável para o os/exec.LookPath achar.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "gtr-on-path-")
+	if err != nil {
+		panic(err)
+	}
+
+	name := "gtr"
+	if runtime.GOOS == "windows" {
+		name = "gtr.exe"
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		panic(err)
+	}
+
+	os.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
 
 const (
 	overdubTarget = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -140,6 +168,22 @@ func TestOverdubDeclinedNeverTouchesGit(t *testing.T) {
 	}
 }
 
+func TestOverdubYesSkipsTheConfirmationPrompt(t *testing.T) {
+	outcomes := []exectest.Response{{Result: exec.Result{Code: 0}}}
+
+	result := overdubbing(t, overdubbed(), outcomes, "", "overdub", overdubTarget, "--yes", "--", "gofmt", "-w", "f.go")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if strings.Contains(result.stdout, "Confirma? [y/N] ") {
+		t.Errorf("saída = %q, --yes não pode nem perguntar", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "Consertado.") {
+		t.Errorf("saída = %q, --yes tem de seguir sem resposta nenhuma no stdin", result.stdout)
+	}
+}
+
 func TestOverdubWithVerifyReportsSuccess(t *testing.T) {
 	outcomes := []exectest.Response{
 		{Result: exec.Result{Code: 0}}, // o conserto
@@ -225,6 +269,22 @@ func TestOverdubRefusesAnEmptyVerifyAfterTheSecondDash(t *testing.T) {
 
 	if result.err == nil {
 		t.Fatal("-- de verificação sem comando depois tem de ser recusado")
+	}
+}
+
+func TestOverdubRefusesWithoutGtrOnPath(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	result := overdubbing(t, overdubbed(), nil, "y\n", "overdub", overdubTarget, "--", "gofmt", "-w", "f.go")
+
+	if result.err == nil {
+		t.Fatal("sem gtr no PATH, o overdub não pode nem começar — a rebase invocaria um editor de sequência que não existe")
+	}
+	if len(result.calls) != 0 {
+		t.Errorf("chamadas = %v, a checagem de PATH vem antes de tocar no git", result.calls)
+	}
+	if result.stdout != "" {
+		t.Errorf("RN-09: nada pode ir para o stdout, veio %q", result.stdout)
 	}
 }
 

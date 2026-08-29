@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	osexec "os/exec"
 
 	"github.com/LHPalma/gitarias/internal/commits"
 	"github.com/LHPalma/gitarias/internal/exec"
@@ -12,6 +13,7 @@ import (
 
 type overdubOptions struct {
 	until string
+	yes   bool
 }
 
 func newOverdubCommand(runner Runner, commands exec.Runner) *cobra.Command {
@@ -26,8 +28,28 @@ func newOverdubCommand(runner Runner, commands exec.Runner) *cobra.Command {
 	}
 
 	command.Flags().StringVar(&options.until, "until", "", "até onde reescrever; vazio significa HEAD")
+	command.Flags().BoolVar(&options.yes, "yes", false,
+		"pula a confirmação interativa — use com cuidado; é a única forma de chamar o overdub por script ou automação")
 
 	return command
+}
+
+// ensureGtrOnPath falha rápido, antes de tocar em qualquer coisa, quando o
+// binário gtr não está achável pelo PATH. Achado testando contra um
+// repositório de verdade: a rebase interativa invoca "gtr
+// overdub-sequence-step <sha>" pelo GIT_SEQUENCE_EDITOR, que resolve o
+// nome do jeito que o próprio git faz — pelo PATH, nunca pelo caminho com
+// que este processo foi chamado. Sem isso, quem roda ./gtr ou ..\gtr.exe
+// só descobre o problema no meio da rebase, com o erro cru do editor do
+// git, não um aviso do gtr.
+func ensureGtrOnPath() error {
+	if _, err := osexec.LookPath("gtr"); err != nil {
+		return fmt.Errorf(
+			"gtr precisa estar no PATH para o overdub funcionar — a rebase invoca \"gtr %s\" de novo como editor de sequência, e isso é resolvido pelo PATH, não pelo caminho usado para chamar este comando agora (%w)",
+			overdub.SequenceStepCommand, err)
+	}
+
+	return nil
 }
 
 func newOverdubSequenceStepCommand() *cobra.Command {
@@ -47,6 +69,10 @@ func runOverdub(command *cobra.Command, repo *overdub.Repo, verifyRunner Runner,
 		return err
 	}
 
+	if err := ensureGtrOnPath(); err != nil {
+		return err
+	}
+
 	ctx := command.Context()
 
 	if err := repo.Ensure(ctx); err != nil {
@@ -63,14 +89,19 @@ func runOverdub(command *cobra.Command, repo *overdub.Repo, verifyRunner Runner,
 		plan.Count, ui.Plural(plan.Count, "commit", "commits"), plan.Target, plan.Subject); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(output, "HEAD atual: %s — se algo der errado, git reset --hard %s desfaz.\n\n",
+	if _, err := fmt.Fprintf(output,
+		"HEAD atual: %s. Se o conserto falhar no meio, o gtr tenta git rebase --abort sozinho; "+
+			"se isso também falhar, ou se o resultado final não agradar, git reset --hard %s desfaz.\n\n",
 		plan.Head, plan.Head); err != nil {
 		return err
 	}
 
-	confirmed, err := confirm(command.InOrStdin(), output, "Confirma? [y/N] ")
-	if err != nil {
-		return err
+	confirmed := options.yes
+	if !confirmed {
+		confirmed, err = confirm(command.InOrStdin(), output, "Confirma? [y/N] ")
+		if err != nil {
+			return err
+		}
 	}
 	if !confirmed {
 		_, err := fmt.Fprintln(output, "Nada foi alterado.")
