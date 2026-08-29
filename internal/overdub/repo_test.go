@@ -2,6 +2,7 @@ package overdub
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/LHPalma/gitarias/internal/exec"
@@ -141,9 +142,11 @@ func baseOverdubResponses() map[string]gittest.Response {
 		"rev-parse HEAD":                            {Output: fullOldHead},
 		symbolicRef:                                 {Output: "main"},
 		rebaseInteractive(fullTarget, fullOldUntil): {Output: ""},
-		"add -A":                                      {Output: ""},
-		"commit --amend --no-edit --allow-empty":      {Output: ""},
-		"rebase --continue":                           {Output: ""},
+		"add -A":                                 {Output: ""},
+		"commit --amend --no-edit --allow-empty": {Output: ""},
+		"rebase --continue":                      {Output: ""},
+		"rebase --abort":                         {Output: ""},
+		"checkout main":                          {Output: ""},
 		rebaseOnto(fullOldHead, fullOldUntil, "main"): {Output: ""},
 	}
 }
@@ -228,6 +231,101 @@ func TestOverdubPropagatesTheFixCommandFailure(t *testing.T) {
 		if recorded == "commit --amend --no-edit --allow-empty" {
 			t.Error("o amend não pode rodar depois de um conserto que falhou")
 		}
+	}
+}
+
+// TestOverdubAbortsARebaseStuckMidwayAfterTheFixFails prova o achado do
+// relatório de campo: um comando de conserto que falha (executável ausente
+// do PATH, no caso real) deixava a rebase parada em HEAD destacado, com
+// .git/rebase-merge no lugar, sem nada desfazer isso. Overdub agora chama
+// git rebase --abort sozinho, e o erro que sobe continua sendo o do
+// conserto — abortar com sucesso não pode esconder a causa original.
+func TestOverdubAbortsARebaseStuckMidwayAfterTheFixFails(t *testing.T) {
+	runner := gittest.NewRunner(baseOverdubResponses())
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Code: 1, Output: "não formatou"}})
+
+	_, err := NewRepo(runner, commands).Overdub(t.Context(), fullTarget, fullOldUntil, "gofmt", []string{"-w", "quebrado.go"})
+	if err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(err.Error(), "não formatou") {
+		t.Errorf("erro = %v, o abort não pode esconder a causa original do conserto", err)
+	}
+	if strings.Contains(err.Error(), "também falhou") {
+		t.Errorf("erro = %v, o abort deu certo aqui, não podia soar como se também tivesse falhado", err)
+	}
+
+	var aborted, checkedOut bool
+	for _, recorded := range runner.Calls {
+		if recorded == "rebase --abort" {
+			aborted = true
+		}
+		if recorded == "checkout main" {
+			checkedOut = true
+		}
+	}
+	if !aborted {
+		t.Errorf("chamadas = %v, a rebase presa tinha de ser desfeita sozinha", runner.Calls)
+	}
+	if !checkedOut {
+		t.Errorf("chamadas = %v, git rebase -i com um sha cru destaca o HEAD antes do primeiro passo — abortar sozinho não basta, precisa voltar pra ref", runner.Calls)
+	}
+}
+
+// TestOverdubMentionsWhenTheAbortItselfFails prova o outro lado: se o
+// próprio git rebase --abort falhar (ex.: ctx cancelado por Ctrl+C durante
+// o conserto), quem chama precisa saber — nunca engolir em silêncio e
+// deixar o repositório preso sem dizer nada.
+func TestOverdubMentionsWhenTheAbortItselfFails(t *testing.T) {
+	responses := baseOverdubResponses()
+	responses["rebase --abort"] = gittest.Response{Err: errNotARepository}
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Code: 1, Output: "não formatou"}})
+
+	_, err := NewRepo(gittest.NewRunner(responses), commands).Overdub(t.Context(), fullTarget, fullOldUntil, "gofmt", nil)
+	if err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(err.Error(), "não formatou") || !strings.Contains(err.Error(), "também falhou") {
+		t.Errorf("erro = %v, queria os dois: a causa original e o aviso de que o abort não resolveu", err)
+	}
+}
+
+// TestOverdubMentionsWhenTheCheckoutBackAlsoFails cobre o abort que
+// funcionou mas não conseguiu devolver a ref original — cenário distinto
+// do abort em si falhar, com sua própria mensagem.
+func TestOverdubMentionsWhenTheCheckoutBackAlsoFails(t *testing.T) {
+	responses := baseOverdubResponses()
+	responses["checkout main"] = gittest.Response{Err: errNotARepository}
+	commands := exectest.NewRunner(exectest.Response{Result: exec.Result{Code: 1, Output: "não formatou"}})
+
+	_, err := NewRepo(gittest.NewRunner(responses), commands).Overdub(t.Context(), fullTarget, fullOldUntil, "gofmt", nil)
+	if err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(err.Error(), "não formatou") {
+		t.Errorf("erro = %v, a causa original não pode se perder", err)
+	}
+	if !strings.Contains(err.Error(), "main") {
+		t.Errorf("erro = %v, tem de nomear pra onde não conseguiu voltar", err)
+	}
+}
+
+func TestOverdubAbortsWhenTheCommandCannotStart(t *testing.T) {
+	runner := gittest.NewRunner(baseOverdubResponses())
+	commands := exectest.NewRunner(exectest.Response{Err: errors.New("executable file not found")})
+
+	if _, err := NewRepo(runner, commands).Overdub(t.Context(), fullTarget, fullOldUntil, "inexistente", nil); err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+
+	var aborted bool
+	for _, recorded := range runner.Calls {
+		if recorded == "rebase --abort" {
+			aborted = true
+		}
+	}
+	if !aborted {
+		t.Errorf("chamadas = %v, comando de conserto que nem começa também deixa a rebase presa, e também precisa abortar", runner.Calls)
 	}
 }
 

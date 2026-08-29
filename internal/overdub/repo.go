@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LHPalma/gitarias/internal/exec"
 	"github.com/LHPalma/gitarias/internal/git"
@@ -140,28 +141,45 @@ func (repo *Repo) Overdub(ctx context.Context, sha string, until string, name st
 		return Result{}, err
 	}
 
-	outcome, err := repo.commands.Run(ctx, "", name, args...)
+	newTarget, newUntilSHA, err := repo.fix(ctx, name, args)
 	if err != nil {
+		return Result{}, repo.abort(ref, err)
+	}
+
+	if _, err := repo.git.Run(ctx, "rebase", "--onto", newUntilSHA, untilSHA, ref); err != nil {
 		return Result{}, err
 	}
+
+	return Result{NewTarget: newTarget, NewHead: newUntilSHA}, nil
+}
+
+// fix roda o comando de conserto e emenda o commit, com a rebase já parada
+// em edit — id est, entre RunWithEnv("rebase", "-i", ...) e "rebase
+// --continue". Qualquer erro aqui deixa a rebase parada no meio; é
+// responsabilidade de quem chama (Overdub, via abort) desfazer isso.
+func (repo *Repo) fix(ctx context.Context, name string, args []string) (string, string, error) {
+	outcome, err := repo.commands.Run(ctx, "", name, args...)
+	if err != nil {
+		return "", "", err
+	}
 	if outcome.Code != 0 {
-		return Result{}, fmt.Errorf("comando de conserto saiu com código %d:\n%s", outcome.Code, outcome.Output)
+		return "", "", fmt.Errorf("comando de conserto saiu com código %d:\n%s", outcome.Code, outcome.Output)
 	}
 
 	if _, err := repo.git.Run(ctx, "add", "-A"); err != nil {
-		return Result{}, err
+		return "", "", err
 	}
 	if _, err := repo.git.Run(ctx, "commit", "--amend", "--no-edit", "--allow-empty"); err != nil {
-		return Result{}, err
+		return "", "", err
 	}
 
 	newTarget, err := repo.resolve(ctx, "HEAD")
 	if err != nil {
-		return Result{}, err
+		return "", "", err
 	}
 
 	if _, err := repo.git.Run(ctx, "rebase", "--continue"); err != nil {
-		return Result{}, err
+		return "", "", err
 	}
 
 	// A checagem de erro abaixo não tem teste dedicado: newTarget, logo
@@ -172,12 +190,38 @@ func (repo *Repo) Overdub(ctx context.Context, sha string, until string, name st
 	// --continue; medido manualmente, não é o mesmo caso reaproveitado.
 	newUntilSHA, err := repo.resolve(ctx, "HEAD")
 	if err != nil {
-		return Result{}, err
+		return "", "", err
 	}
 
-	if _, err := repo.git.Run(ctx, "rebase", "--onto", newUntilSHA, untilSHA, ref); err != nil {
-		return Result{}, err
+	return newTarget, newUntilSHA, nil
+}
+
+// abort desfaz uma rebase que ficou parada no meio, depois de fix falhar, e
+// devolve ref — a branch ou o sha que estava em HEAD antes de Overdub
+// começar. Os dois passos vieram de achados testando contra um
+// repositório de verdade: (1) um comando de conserto que falha (executável
+// ausente do PATH, por exemplo) deixava o repositório em HEAD destacado,
+// com .git/rebase-merge no lugar, sem nada desfazer isso; (2) git rebase
+// -i com um sha cru como <branch> — o que Overdub sempre faz, para poder
+// fazer o --onto no final — já destaca o HEAD antes mesmo do primeiro
+// passo, então "git rebase --abort" sozinho devolve a HEAD destacado, não
+// à branch original: falta o checkout de volta pra ref.
+//
+// Usa um contexto próprio, nunca o de err: se a falha original veio de ctx
+// cancelado (Ctrl+C no meio do conserto), o mesmo ctx recusaria os dois
+// comandos de limpeza, e a rebase ficaria presa mesmo assim. Se qualquer
+// um dos dois falhar, isso é dito junto do erro original, nunca engolido.
+func (repo *Repo) abort(ref string, cause error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := repo.git.Run(ctx, "rebase", "--abort"); err != nil {
+		return fmt.Errorf("%w (e git rebase --abort também falhou, resolva manualmente: %v)", cause, err)
 	}
 
-	return Result{NewTarget: newTarget, NewHead: newUntilSHA}, nil
+	if _, err := repo.git.Run(ctx, "checkout", ref); err != nil {
+		return fmt.Errorf("%w (a rebase foi abortada, mas voltar para %s falhou, resolva manualmente: %v)", cause, ref, err)
+	}
+
+	return cause
 }
