@@ -23,8 +23,18 @@ func (repo *Repo) Ensure(ctx context.Context) error {
 	return git.EnsureRepo(ctx, repo.git)
 }
 
+// Range devolve, do mais antigo para o mais novo, os commits de base..HEAD.
+// É o atalho de Interval para to == HEAD, o único caso que commits check e
+// commits bisect precisam.
 func (repo *Repo) Range(ctx context.Context, base string) ([]Commit, error) {
-	output, err := repo.git.Run(ctx, "log", "--reverse", "--format=%H%x00%s", base+"..HEAD")
+	return repo.Interval(ctx, base, "HEAD")
+}
+
+// Interval é a forma geral de Range: do mais antigo para o mais novo, os
+// commits de from..to. Existe à parte porque gtr overdub --verify precisa
+// fechar antes do HEAD real quando --until não é o HEAD.
+func (repo *Repo) Interval(ctx context.Context, from string, to string) ([]Commit, error) {
+	output, err := repo.git.Run(ctx, "log", "--reverse", "--format=%H%x00%s", from+".."+to)
 	if err != nil {
 		return nil, err
 	}

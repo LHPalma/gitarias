@@ -92,6 +92,22 @@ func TestRange(t *testing.T) {
 	}
 }
 
+func TestIntervalStopsBeforeAGivenCommitInsteadOfHEAD(t *testing.T) {
+	responses := map[string]gittest.Response{
+		insideWorkTree: {Output: "true"},
+		"log --reverse --format=%H%x00%s main..deadbeef": {Output: "aaa\x00primeiro"},
+	}
+
+	found, err := NewRepo(gittest.NewRunner(responses), exectest.NewRunner()).Interval(t.Context(), "main", "deadbeef")
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if len(found) != 1 || found[0].SHA != "aaa" {
+		t.Errorf("commits = %+v, queria so o do intervalo pedido", found)
+	}
+}
+
 func TestRangeKeepsTheOrderTheGitGave(t *testing.T) {
 	responses := logOf("main", "aaa\x00mais antigo\nbbb\x00do meio\nccc\x00mais novo")
 
