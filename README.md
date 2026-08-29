@@ -392,6 +392,64 @@ andamento sem guardar nada antes.
 diz que ninguém falhou e o código de saída é 0; a saída é 1 quando um culpado
 é encontrado.
 
+### `gtr overdub`
+
+Conserta **um** commit no lugar — rodando um comando arbitrário só na árvore
+dele — e recoloca o resto do histórico por cima, hash em cascata, com
+confirmação antes de mexer em qualquer coisa. É o par do `commits bisect`:
+um acha o commit ruim, o outro remenda ali mesmo, sem deixar um commit de
+correção solto no topo.
+
+```
+$ gtr overdub 8a9b0c1 -- gofmt -w retry.go -- go test ./...
+Isso vai reescrever 6 commits a partir de 8a9b0c1 "refactor: extract the retry loop".
+HEAD atual: 0c1d2e3 — se algo der errado, git reset --hard 0c1d2e3 desfaz.
+
+Confirma? [y/N] y
+Consertado. Novo HEAD: 4f8a1c9
+Verificando 6 commits sobre 91e5a02^.
+
+  verde  a92f6e1  refactor: extract the retry loop
+  verde  ...
+
+Os 6 se sustentam sozinhos.
+```
+
+O comando vem em até dois blocos depois de `--`, na mesma lógica do
+`commits check`: o primeiro é o **conserto** (roda uma vez, só no commit
+apontado); o segundo, opcional, é a **verificação** — se vier, o intervalo
+inteiro reescrito passa pelo mesmo mecanismo do `commits check` depois do
+reencaixe, e reporta se algum commit ainda não se sustenta.
+
+```bash
+gtr overdub 8a9b0c1 -- gofmt -w retry.go                       # só conserta
+gtr overdub 8a9b0c1 -- gofmt -w retry.go -- go test ./...      # conserta e confere o resto
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--until <sha>` | vazio | Até onde reescrever; vazio significa `HEAD` |
+
+**Nunca passa pelo `--exec` da rebase.** `--exec` roda a string por um shell,
+e o comando de conserto é arbitrário — misturar os dois abriria a mesma
+injeção que o `gtr author` já evita para a identidade. Em vez disso, a
+rebase para exatamente no commit apontado (um subcomando oculto do próprio
+`gtr`, `overdub-sequence-step`, troca só a linha dele de `pick` para `edit`
+no arquivo de todo — precisa estar no `PATH`, mesma exigência que o `gh` já
+tem), o comando de conserto roda direto pelo `internal/exec.Runner` — argv
+intacto, sem shell —, e só então o commit é emendado.
+
+**Isso mexe em histórico de verdade**, ao contrário de `commits check` e
+`commits bisect`: o `HEAD` se move, e tudo depois do commit-alvo ganha hash
+novo, mesmo sem mudar de conteúdo — a mesma dança do `gtr author` e do
+`gtr ai-trailers strip`. A recuperação é a mesma delas: nenhum diário
+próprio, só o `git reset --hard` para o `HEAD` de antes, impresso na
+confirmação.
+
+**Não funciona no commit raiz de um repositório** — `<sha>^` não existe
+quando `<sha>` não tem pai, e o git recusa a faixa. Consertar o primeiro
+commit da história inteira fica fora do escopo por ora.
+
 ### `gtr doctor`
 
 Confere se o `gtr` funciona aqui, agora.
@@ -1455,10 +1513,10 @@ O `gtr completion <bash|zsh|fish|powershell>` gera o script de autocomplete.
 
 ## Estado
 
-No ar: `branches` (com `--tree`), `worktrees`, `commits check`, `commits bisect`, `ignore list`,
-`licenses`, `doctor`, `undo`, `author`, `weight`, `churn`, `setup`, `pr list`
+No ar: `branches` (com `--tree`), `worktrees`, `commits check`, `commits bisect`, `overdub`,
+`ignore list`, `licenses`, `doctor`, `undo`, `author`, `weight`, `churn`, `setup`, `pr list`
 e `stats`. Todos aceitam `--format`, menos o `licenses`, que imprime texto de
-licença, e o `undo` e o `author`, que são interativos.
+licença, e o `undo`, o `author` e o `overdub`, que são interativos.
 
 Planejados: seleção interativa de quais branches apagar, `gtr split` para
 quebrar a árvore suja em vários commits, `gtr ignore add`, `stats`
