@@ -275,6 +275,34 @@ comando terminar no mesmo erro que `git worktree remove` daria sozinho — a
 guarda deste comando é a lista de ignorados, nunca uma forma de contornar o
 que o git já protege.
 
+### `gtr worktrees release`
+
+Solta uma branch presa em outro working tree com `git checkout --detach` —
+das três formas que `gtr branches` ensina quando encontra uma branch mergeada
+em uso por outro working tree, é a única comprovadamente não destrutiva:
+só move o `HEAD` daquele working tree, e qualquer trabalho não commitado que
+esteja lá sobrevive intacto (ADR-007).
+
+```
+$ gtr worktrees release fix-login
+fix-login está em /home/voce/projeto-fix. git checkout --detach vai soltar a branch, sem tocar em mais nada ali.
+/home/voce/projeto-fix tem trabalho não commitado: ele sobrevive, mas passa a viver num HEAD destacado.
+Soltar fix-login? [y/N] y
+Pronto.
+```
+
+O aviso de trabalho não commitado só aparece quando existe algo — o comando
+não avisa à toa. O caminho vem do `List()` do próprio `gtr worktrees`, a
+partir do nome da branch; uma branch que não está presa em nenhum working
+tree é recusada antes de qualquer pergunta.
+
+**Sem `--force`, e nunca automático.** Se o git recusar (por exemplo, com uma
+rebase pela metade naquele working tree), o erro é propagado. E o comando
+nunca roda como efeito colateral de `gtr branches --clean`: alterar o estado
+de um diretório que a pessoa não mencionou é surpresa grande demais para
+acontecer em silêncio — `branches` continua só diagnosticando e sugerindo os
+três comandos manuais.
+
 ### `gtr commits check`
 
 Roda um comando em **cada commit** de um intervalo, com a árvore daquele commit
