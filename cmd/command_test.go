@@ -572,6 +572,242 @@ func TestWorktreesRemoveOutsideRepository(t *testing.T) {
 	}
 }
 
+func TestWorktreesReleaseWarnsAndAsks(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel":         {Output: "/repo"},
+		"-C " + fix + " status --porcelain": {Output: " M arquivo.go\n"},
+		"-C " + fix + " checkout --detach":  {Output: ""},
+	}
+
+	result := execute(t, responses, "y\n", "worktrees", "release", "fix")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, fix) {
+		t.Errorf("saída = %q, queria o caminho do working tree", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "tem trabalho não commitado") {
+		t.Errorf("saída = %q, queria o aviso de trabalho não commitado", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "Soltar fix? [y/N] ") {
+		t.Errorf("saída = %q, queria a pergunta de confirmação", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "Pronto.") {
+		t.Errorf("saída = %q, queria a confirmação de sucesso", result.stdout)
+	}
+
+	var released bool
+	for _, call := range result.calls {
+		if call == "-C "+fix+" checkout --detach" {
+			released = true
+		}
+	}
+	if !released {
+		t.Errorf("esperava a chamada de detach entre %v", result.calls)
+	}
+}
+
+func TestWorktreesReleaseWithoutUncommittedWork(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel":         {Output: "/repo"},
+		"-C " + fix + " status --porcelain": {Output: ""},
+		"-C " + fix + " checkout --detach":  {Output: ""},
+	}
+
+	result := execute(t, responses, "y\n", "worktrees", "release", "fix")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if strings.Contains(result.stdout, "trabalho não commitado") {
+		t.Errorf("saída = %q, não devia avisar sobre trabalho não commitado que não existe", result.stdout)
+	}
+}
+
+func TestWorktreesReleasePropagatesWriteFailureOfTheDirtyWarning(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel":         {Output: "/repo"},
+		"-C " + fix + " status --porcelain": {Output: " M arquivo.go\n"},
+	}
+
+	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
+	command.SetOut(&countingWriter{allowed: 1})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"worktrees", "release", "fix"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha de escrita no aviso de trabalho não commitado tem de virar erro")
+	}
+}
+
+func TestWorktreesReleaseCancelledNeverCallsGit(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel":         {Output: "/repo"},
+		"-C " + fix + " status --porcelain": {Output: ""},
+	}
+
+	result := execute(t, responses, "\n", "worktrees", "release", "fix")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "Cancelado, nada foi solto.") {
+		t.Errorf("saída = %q, queria o cancelamento", result.stdout)
+	}
+	for _, call := range result.calls {
+		if strings.Contains(call, "checkout --detach") {
+			t.Fatalf("RF-04: Enter vazio cancela, mas rodou %q", call)
+		}
+	}
+}
+
+func TestWorktreesReleaseRejectsBranchNotHeldByAnyWorktree(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain":       {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n"},
+		"rev-parse --show-toplevel":       {Output: "/repo"},
+	}
+
+	result := execute(t, responses, "", "worktrees", "release", "fantasma")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(result.err.Error(), "não está presa em nenhum working tree") {
+		t.Errorf("erro = %v, queria a mensagem específica", result.err)
+	}
+	if result.stdout != "" {
+		t.Errorf("RN-09: nada pode ir para o stdout, veio %q", result.stdout)
+	}
+}
+
+func TestWorktreesReleasePropagatesGitRefusal(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel":         {Output: "/repo"},
+		"-C " + fix + " status --porcelain": {Output: ""},
+		"-C " + fix + " checkout --detach":  {Err: errors.New("error: you need to resolve your current index first")},
+	}
+
+	result := execute(t, responses, "y\n", "worktrees", "release", "fix")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(result.err.Error(), "resolve your current index first") {
+		t.Errorf("erro deveria carregar a mensagem do git, veio %v", result.err)
+	}
+}
+
+func TestWorktreesReleasePropagatesDirtyCheckFailure(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel":         {Output: "/repo"},
+		"-C " + fix + " status --porcelain": {Err: errNotARepository},
+	}
+
+	result := execute(t, responses, "", "worktrees", "release", "fix")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	for _, call := range result.calls {
+		if strings.Contains(call, "checkout --detach") {
+			t.Fatalf("não pode soltar sem antes conseguir checar trabalho não commitado, mas rodou %q", call)
+		}
+	}
+}
+
+func TestWorktreesReleasePropagatesListFailure(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain":       {Err: errNotARepository},
+	}
+
+	result := execute(t, responses, "", "worktrees", "release", "fix")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+}
+
+func TestWorktreesReleasePropagatesWriteFailure(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel":         {Output: "/repo"},
+		"-C " + fix + " status --porcelain": {Output: ""},
+	}
+
+	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
+	command.SetOut(brokenWriter{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"worktrees", "release", "fix"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha de escrita tem de virar erro")
+	}
+}
+
+func TestWorktreesReleasePropagatesReadFailure(t *testing.T) {
+	fix := absolute(t, "/repo-fix")
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		"worktree list --porcelain": {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+			"worktree " + fix + "\nHEAD def\nbranch refs/heads/fix\n"},
+		"rev-parse --show-toplevel":         {Output: "/repo"},
+		"-C " + fix + " status --porcelain": {Output: ""},
+	}
+
+	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetIn(brokenReader{})
+	command.SetArgs([]string{"worktrees", "release", "fix"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha na leitura da confirmação tem de virar erro")
+	}
+}
+
+func TestWorktreesReleaseOutsideRepository(t *testing.T) {
+	responses := map[string]gittest.Response{"rev-parse --is-inside-work-tree": {Err: errNotARepository}}
+
+	result := execute(t, responses, "", "worktrees", "release", "fix")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(result.err.Error(), "não é um repositório git") {
+		t.Fatalf("erro = %v, queria o do Ensure e não o de outra etapa", result.err)
+	}
+}
+
 func TestWorktreesCommandShowsTheStateColumn(t *testing.T) {
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree": {Output: "true"},

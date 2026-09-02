@@ -26,6 +26,7 @@ func newWorktreesCommand(runner git.Runner) *cobra.Command {
 	options.register(command)
 
 	command.AddCommand(newWorktreesRemoveCommand(runner))
+	command.AddCommand(newWorktreesReleaseCommand(runner))
 
 	return command
 }
@@ -114,6 +115,88 @@ func runWorktreesRemove(command *cobra.Command, repo *worktree.Repo, path string
 	_, err = fmt.Fprintln(output, "Pronto.")
 
 	return err
+}
+
+func newWorktreesReleaseCommand(runner git.Runner) *cobra.Command {
+	command := &cobra.Command{
+		Use:   "release <branch>",
+		Short: "Solta uma branch presa em outro working tree, sem mexer em mais nada",
+		Long: "Solta branch do working tree que a prende, com git checkout --detach — o único, " +
+			"dos três caminhos que gtr branches ensina, comprovadamente não destrutivo: só move o " +
+			"HEAD daquele working tree, e qualquer trabalho não commitado que esteja lá sobrevive " +
+			"intacto (passa a viver num HEAD destacado). Pede confirmação antes; se o git recusar " +
+			"(rebase pela metade, por exemplo), o erro é propagado, sem --force. ADR-007.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			return runWorktreesRelease(command, worktree.NewRepo(runner), args[0])
+		},
+	}
+
+	return command
+}
+
+func runWorktreesRelease(command *cobra.Command, repo *worktree.Repo, branchName string) error {
+	ctx := command.Context()
+	output := command.OutOrStdout()
+
+	if err := repo.Ensure(ctx); err != nil {
+		return err
+	}
+
+	worktrees, err := repo.List(ctx)
+	if err != nil {
+		return err
+	}
+
+	target, err := findWorktreeByBranch(worktrees, branchName)
+	if err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintf(output, "%s está em %s. git checkout --detach vai soltar a branch, sem tocar em mais nada ali.\n",
+		branchName, target.Path); err != nil {
+		return err
+	}
+
+	dirty, err := repo.Dirty(ctx, target.Path)
+	if err != nil {
+		return err
+	}
+	if dirty {
+		if _, err := fmt.Fprintf(output, "%s tem trabalho não commitado: ele sobrevive, mas passa a viver num HEAD destacado.\n", target.Path); err != nil {
+			return err
+		}
+	}
+
+	confirmed, err := confirm(command.InOrStdin(), output, fmt.Sprintf("Soltar %s? [y/N] ", branchName))
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		_, err := fmt.Fprintln(output, "Cancelado, nada foi solto.")
+		return err
+	}
+
+	if err := repo.Release(ctx, target.Path); err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintln(output, "Pronto.")
+
+	return err
+}
+
+// findWorktreeByBranch acha, entre os working trees listados, aquele que
+// tem branchName no HEAD — o mesmo List() que gtr branches já usa para
+// achar quem está prendendo a branch.
+func findWorktreeByBranch(worktrees []worktree.Worktree, branchName string) (worktree.Worktree, error) {
+	for _, entry := range worktrees {
+		if entry.Branch == branchName {
+			return entry, nil
+		}
+	}
+
+	return worktree.Worktree{}, fmt.Errorf("%s não está presa em nenhum working tree; veja gtr worktrees", branchName)
 }
 
 // findWorktree acha, entre os working trees listados, aquele cujo caminho

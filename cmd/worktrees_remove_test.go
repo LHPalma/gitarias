@@ -62,3 +62,26 @@ func TestFindWorktreeRejectsUnknownPath(t *testing.T) {
 		t.Fatal("esperava erro, veio nil")
 	}
 }
+
+func TestFindWorktreeByBranchMatchesTheBranchHoldingIt(t *testing.T) {
+	worktrees := []worktree.Worktree{
+		{Path: "/repo", Branch: "main"},
+		{Path: "/repo-fix", Branch: "fix"},
+	}
+
+	found, err := findWorktreeByBranch(worktrees, "fix")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if found.Path != "/repo-fix" {
+		t.Errorf("veio %q, queria %q", found.Path, "/repo-fix")
+	}
+}
+
+func TestFindWorktreeByBranchRejectsUnknownBranch(t *testing.T) {
+	worktrees := []worktree.Worktree{{Path: "/repo", Branch: "main"}}
+
+	if _, err := findWorktreeByBranch(worktrees, "fantasma"); err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+}
