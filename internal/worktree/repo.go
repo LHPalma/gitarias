@@ -105,6 +105,30 @@ func (repo *Repo) Remove(ctx context.Context, path string) error {
 	return err
 }
 
+// Release solta path de sua branch com git -C <path> checkout --detach — o
+// único dos três caminhos que gtr branches ensina que é comprovadamente não
+// destrutivo: verificado que ele preserva trabalho não commitado, movendo
+// só o HEAD daquele working tree. ADR-007. Sem --force: o que o git
+// recusar (rebase pela metade, por exemplo) continua recusado, propagado
+// como erro.
+func (repo *Repo) Release(ctx context.Context, path string) error {
+	_, err := repo.runner.Run(ctx, "-C", path, "checkout", "--detach")
+	return err
+}
+
+// Dirty diz se path tem trabalho não commitado — rastreado ou não, staged
+// ou não. Release não perde esse trabalho, mas ele passa a viver num HEAD
+// destacado depois, e quem não sabe disso se assusta; é esse aviso que
+// Dirty alimenta.
+func (repo *Repo) Dirty(ctx context.Context, path string) (bool, error) {
+	output, err := repo.runner.Run(ctx, "-C", path, "status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+
+	return strings.TrimSpace(output) != "", nil
+}
+
 func splitNUL(output string) []string {
 	if output == "" {
 		return nil

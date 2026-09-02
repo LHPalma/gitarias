@@ -293,6 +293,84 @@ func TestRemoveNeverPassesForce(t *testing.T) {
 	}
 }
 
+func TestReleaseRunsCheckoutDetachThroughDashC(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"-C /wt checkout --detach": {Output: ""},
+	})
+
+	if err := NewRepo(runner).Release(t.Context(), "/wt"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+}
+
+func TestReleasePropagatesGitError(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"-C /wt checkout --detach": {Err: errors.New("error: you need to resolve your current index first")},
+	})
+
+	err := NewRepo(runner).Release(t.Context(), "/wt")
+	if err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(err.Error(), "resolve your current index first") {
+		t.Errorf("erro deveria carregar a mensagem do git, veio %v", err)
+	}
+}
+
+func TestReleaseNeverPassesForce(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"-C /wt checkout --detach": {Output: ""},
+	})
+
+	if err := NewRepo(runner).Release(t.Context(), "/wt"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	for _, call := range runner.Calls {
+		if strings.Contains(call, "--force") || strings.Contains(call, "-f") {
+			t.Fatalf("ADR-007: release nunca passa --force ao git, mas rodou %q", call)
+		}
+	}
+}
+
+func TestDirtyTrueWithUncommittedWork(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"-C /wt status --porcelain": {Output: " M arquivo.go\n"},
+	})
+
+	dirty, err := NewRepo(runner).Dirty(t.Context(), "/wt")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if !dirty {
+		t.Error("saída com mudança tem de virar Dirty = true")
+	}
+}
+
+func TestDirtyFalseWhenClean(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"-C /wt status --porcelain": {Output: ""},
+	})
+
+	dirty, err := NewRepo(runner).Dirty(t.Context(), "/wt")
+	if err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+	if dirty {
+		t.Error("saída vazia tem de virar Dirty = false")
+	}
+}
+
+func TestDirtyPropagatesGitError(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{
+		"-C /wt status --porcelain": {Err: errors.New("fatal: not a git repository")},
+	})
+
+	if _, err := NewRepo(runner).Dirty(t.Context(), "/wt"); err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+}
+
 func TestListNeverReadsRemoteRefs(t *testing.T) {
 	runner := gittest.NewRunner(map[string]gittest.Response{
 		listCommand:     {Output: "worktree /repo\nHEAD abc\nbranch refs/heads/main"},
