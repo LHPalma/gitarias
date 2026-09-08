@@ -133,7 +133,7 @@ E os caminhos da `RF-02` também: `gh` ausente, credencial recusada (401) e sem 
 
 ## 7. Testes
 
-**100% de statements** em `cmd` e `internal/forge`.
+**100% de statements** em `internal/forge` e nos arquivos de `cmd` deste comando — `pr.go`, `pull_requests_table.go`, `pull_requests_document.go` e `pull_request_record.go`.
 
 | # | Cenário | Esperado |
 |---|---|---|
