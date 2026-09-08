@@ -88,6 +88,16 @@ O papel é o mesmo do `@DisplayName` de JUnit: o identificador é código, a des
 
 Exceção: o **mutante equivalente** — mutação semanticamente idêntica ao original, que nenhum teste externo pode distinguir. Não deve ser "fechado" com asserção artificial; deve ser registrado na especificação da feature.
 
+**A barra é 100%, e o repositório está em 99,2%** — medido com `go test ./... -coverpkg=./...`, que é o número que conta, porque a cobertura de um pacote vem em boa parte dos testes de quem o usa. O que falta está nomeado nas especificações de cada feature, e cai em três categorias:
+
+| Categoria | Exemplos | O que fazer |
+|---|---|---|
+| **Fronteira** | `main.main`, o `run` do `git.CommandRunner` | Nada. É onde o processo toca o mundo, e a regra do projeto já os isenta |
+| **Estrutural** | `doctor.ScratchVariable`, que tem um ramo por sistema operacional | Nada. Cobrir exigiria injetar o sistema numa função de duas linhas — costura de teste no código de produção |
+| **Lacuna de verdade** | `ui.DescribeSection`, em 30,8% | Fechar. Um `switch` de doze ramos sem teste direto deixa passar troca de rótulo entre casos |
+
+**Não há portão de cobertura no CI**, de propósito: um número no pipeline vira meta, e meta de cobertura se cumpre com teste que executa sem afirmar. A disciplina é a mutação, e ela não se automatiza.
+
 ### Teste de cenário precisa provar que o cenário existiu
 
 Um cenário que verifica ausência — "o arquivo X não foi criado", "a branch Y não aparece" — **passa de graça quando a montagem falha silenciosamente**. Aconteceu duas vezes neste projeto:
