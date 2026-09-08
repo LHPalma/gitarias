@@ -187,7 +187,7 @@ camada-3,camada-2,não mergeada
 
 ## 6. Testes
 
-**100% de statements em `cmd`, `internal/branch` e `internal/ui`**, com a suíte inteira rodando contra o fake.
+**100% de statements** em `internal/branch`, em `cmd/branches.go` e `cmd/tree_table.go`, e no `ui.DescribeLayer` — com a suíte inteira rodando contra o fake.
 
 ### 6.1 A regressão que a suíte não pegou
 
