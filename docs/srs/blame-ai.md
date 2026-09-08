@@ -47,6 +47,7 @@ Nasceu como piada, o caminho contrário ao `strip`, mas usa mecanismo real e tes
 ```text
 internal/aitrailers/
 ├── signature.go             Signature(name) — trailer canônico para claude e copilot
+├── plan.go                  BlamePlan: o HEAD, o commit-alvo, o assunto e o trailer a acrescentar
 └── repo.go                  Blame, blameHead, PlanBlame
 
 cmd/blame_ai.go              o comando, --commit/--tool, prévia e confirmação
