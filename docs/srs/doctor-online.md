@@ -194,7 +194,7 @@ A `RN-04` da [SRS — doctor](doctor.md) continua valendo do mesmo jeito — a c
 
 ## 7. Testes
 
-**100% de statements** em `internal/forge`, `internal/doctor` e `cmd`.
+**100% de statements** em `internal/forge`, no `connected.go` e no `scope.go` do `internal/doctor`, e em `cmd/doctor.go`.
 
 | # | Cenário | Esperado |
 |---|---|---|
