@@ -169,7 +169,7 @@ Na base, as duas opções foram medidas:
 
 ## 7. Testes
 
-**100% de statements** em `cmd`, `internal/platform` e `platformtest`.
+**100% de statements** em `internal/platform`, `platformtest` e `cmd/setup.go`.
 
 | # | Cenário | Esperado |
 |---|---|---|
