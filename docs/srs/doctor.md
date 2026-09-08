@@ -72,6 +72,8 @@ internal/doctor/             domínio do diagnóstico — não imprime nada
 ├── check.go                 Check: nome, estado, detalhe e dica
 ├── version.go               a mínima do git, e como ler uma saída de --version
 ├── operation.go             as operações de git detectáveis por ref
+├── connected.go             a checagem de conexão — fora do Diagnose
+├── scope.go                 a checagem de escopo do token — fora do Diagnose
 └── doctor.go                Diagnose, e uma função por checagem
 
 internal/ui/doctor.go        DescribeCheck: o rótulo de tela
@@ -379,7 +381,9 @@ O candidato óbvio seria `gh api user`: JSON contratual, sai não-zero em 401. *
 
 ## 7. Testes
 
-**100% de statements** em `cmd`, `internal/doctor` e `internal/ui`.
+**100% de statements** em `cmd/doctor.go`, `cmd/diagnosis_table.go` e `cmd/trimming_writer.go`, e no `ui.DescribeCheck`.
+
+**Um ponto do `internal/doctor` fica abaixo, e é estrutural:** o `ScratchVariable` mede 66,7% porque devolve `TMP` no Windows e `TMPDIR` no resto — **o ramo que a máquina que roda a suíte não é nunca é alcançado**. Cobrir os dois exigiria injetar o sistema operacional numa função de duas linhas, o que trocaria uma lacuna medida por uma costura de teste no código de produção.
 
 O caminho de **`gh` ausente foi exercitado de verdade**, não simulado: a máquina não tinha `gh` quando a checagem foi escrita.
 
