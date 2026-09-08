@@ -527,6 +527,10 @@ $ gtr doctor
 | `--format <f>` | `text` | `text`, `csv`, `tsv` ou `json` |
 | `--output <caminho>` | vazio | Caminho do arquivo a gravar, em vez do `stdout` |
 
+O apelido é `soundcheck`: passagem de som é conferir que o equipamento funciona
+**antes** de tocar, que é exatamente o que o comando faz. Fica fora da ajuda da
+raiz, para que o nome anunciado seja o óbvio.
+
 **Quatro estados, e a diferença entre eles é o que o comando tem de útil:**
 
 | Estado | Significa | Afeta a saída? |
@@ -1593,6 +1597,9 @@ $ gtr licenses
   github.com/spf13/pflag                BSD-3-Clause
   github.com/inconshreveable/mousetrap  Apache-2.0    (só no binário Windows)
 ```
+
+Com `--full`, sai o texto integral de cada licença, que é o que a
+redistribuição exige de fato; sem a flag, só o resumo acima.
 
 Nenhuma é copyleft e nenhuma impõe condição ao código do `gtr`. Um teste
 compara o `go.mod` com o arquivo e falha se entrar dependência cujas licenças
