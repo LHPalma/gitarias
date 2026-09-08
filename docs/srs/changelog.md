@@ -157,6 +157,10 @@ Não existe ainda arquivo de configuração para escolher quais tipos mostrar po
 
 **100% de statements** em `internal/changelog` e nos arquivos de `cmd/changelog*.go`.
 
+**O rótulo das seções é a exceção, e é o ponto mais descoberto do projeto:** o `ui.DescribeSection`, que traduz o tipo do commit no cabeçalho do Markdown, mede **30,8%**. Ele é um `switch` de doze ramos e **não tem teste direto** — o que o exercita são os testes do comando, que montam histórico com poucos tipos.
+
+O risco de comportamento é baixo, porque o `default` devolve `Miscellaneous` e nenhum ramo faz mais do que devolver uma string. O risco real é outro: **trocar dois rótulos de lugar não quebraria teste nenhum** — exatamente a mutação que a disciplina do projeto manda procurar.
+
 | # | Cenário | Esperado |
 |---|---|---|
 | 1 | Um commit de cada um dos onze tipos | Classificados certo — `RF-01`, `RF-02` |
