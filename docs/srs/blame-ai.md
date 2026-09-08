@@ -126,7 +126,7 @@ O `strip` teve de decidir manualmente onde cortar o bloco de trailers e como rec
 
 ## 6. Testes
 
-**100% de statements** na parte de fabricação do `internal/aitrailers` e em `cmd/blame_ai.go`.
+**100% de statements** na parte de fabricação do `internal/aitrailers`. **Em `cmd/blame_ai.go`, o `runBlameAI` mede 95,2%** — o que sobra são ramos de erro de escrita, não do caminho que fabrica o trailer.
 
 | # | Cenário | Esperado |
 |---|---|---|
