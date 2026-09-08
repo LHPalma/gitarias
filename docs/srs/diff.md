@@ -182,7 +182,11 @@ A primeira leitura de candidatos usava `git status --porcelain -z`, a v1. Toda s
 
 Trocado para `--porcelain=v2`, em que o tipo de cada linha (`1`, `?`, `!`) vem primeiro e **nenhum registro abre com espaço**. Achado rodando o binário contra um repositório de verdade, não em teste — o fake devolvia o que se esperava dele.
 
-### 6.2 O cenário que define a feature
+### 6.2 Cobertura
+
+**100% de statements em `internal/diff` e em `cmd/diff.go`.** Cada falha intermediária tem teste isolado — `Changes`, base, `read-tree`, `add`, `diff`, escrita do patch e escrita do resumo —, porque cada uma tem mensagem e caminho de saída próprios.
+
+### 6.3 O cenário que define a feature
 
 Árvore com três alterações, uma de cada natureza:
 
@@ -205,7 +209,7 @@ logo.png           modificado      (tracked, binário)
 
 A suíte cobre cada falha intermediária isoladamente — `Changes`, base, `read-tree`, `add`, `diff`, escrita do patch e escrita do resumo —, porque cada uma tem uma mensagem própria e um caminho de saída próprio.
 
-### 6.3 Ponto de atenção do método
+### 6.4 Ponto de atenção do método
 
 O cenário 1 é do tipo que a [SRS — equivalência](equivalencia.md) registra como armadilha: **teste de cenário precisa provar que o cenário existiu**. Se a montagem falhar em silêncio e a árvore ficar sem o binário, a asserção "os três voltaram" passa de graça. A pré-condição de cada um dos três arquivos precisa ser conferida antes.
 
