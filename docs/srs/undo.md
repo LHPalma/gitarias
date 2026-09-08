@@ -212,7 +212,7 @@ O `parse` descarta em silêncio a linha truncada ou com instante ilegível, e se
 
 ## 6. Testes
 
-**100% de statements** em `cmd`, `internal/undo`, `internal/branch` e `internal/ui`.
+**100% de statements** em `internal/undo`, `internal/branch` e em `cmd/undo.go`. O `ui.DescribeRefusal` também está coberto — o pacote `internal/ui` inteiro não está, mas o que falta lá é de outro comando.
 
 | # | Cenário | Esperado |
 |---|---|---|
