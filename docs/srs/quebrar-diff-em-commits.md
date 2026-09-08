@@ -254,7 +254,9 @@ Hunk 3 de 11 — cmd/branches.go
 
 ## 7. Testes
 
-**100% de statements em `cmd`, `internal/commits`, `internal/exec`, `exectest` e `internal/ui`**, com a suíte inteira rodando contra os fakes — nada no portão do CI depende do git de verdade. Os cenários do §7.2 estão implementados; os do §7.3 seguem sendo aceitação do que não existe.
+**100% de statements** em `internal/commits`, `internal/exec`, `exectest`, em `cmd/commits.go` e `cmd/checked_table.go`, e nos rótulos deste comando no `internal/ui` — com a suíte inteira rodando contra os fakes, e nada no portão do CI dependendo do git de verdade. Os cenários do §7.2 estão implementados; os do §7.3 seguem sendo aceitação do que não existe.
+
+**Uma linha do relatório de cobertura merece explicação, porque parece buraco e não é:** o `ArchiveExtractor.Release` aparece em 0% porque **não tem statement nenhum**. O corpo é vazio de propósito — ele existe só para cumprir o contrato `Extractor`, que o `WorktreeExtractor` precisa de verdade, para rodar `worktree remove --force`. A extração por `archive` escreve num diretório temporário que quem chamou já apaga, então não há o que liberar.
 
 ### 7.1 Duas asperezas que a implementação achou
 
@@ -335,7 +337,7 @@ A leitura estreita seria: `context` só no `internal/exec`, porque das cinco cha
 
 **O `context` atravessa os três domínios também**, e a decisão se sustenta por um motivo que a leitura estreita não pesava: o segundo consumidor é previsível. O `branches` com detecção de equivalência gasta **4 a 5 invocações de git por branch** — em 200 branches, cerca de mil chamadas. Cancelar aquilo vai interessar.
 
-O custo temido — ramo de cancelamento sem teste em três domínios — não se materializou: um teste por domínio fecha, e a cobertura fica em **100% em tudo**.
+O custo temido — ramo de cancelamento sem teste em três domínios — não se materializou: **um teste por domínio fecha os três**.
 
 ### Duas sutilezas que só aparecem implementando
 
