@@ -92,6 +92,7 @@ internal/ignore/             domínio — não imprime nada
 └── repo.go                  Repo: Ensure, List, candidates, parse
 
 cmd/ignore.go                front de texto
+cmd/expand_dir_completion.go a completion dinâmica do --expand-dir
 cmd/ignored_record.go        o registro com as tags json
 cmd/output.go                writeAndClose
 ```
