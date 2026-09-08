@@ -199,7 +199,7 @@ A cobertura apontou um statement inalcançável: o `tracked` nunca devolvia erro
 
 ## 6. Testes
 
-**100% de statements** em `cmd`, `internal/weight` e `internal/ui`.
+**100% de statements** em `internal/weight`, nos arquivos de `cmd` deste comando, e no `ui.DescribeBytes` e no `ui.DescribeResidence`.
 
 | # | Cenário | Esperado |
 |---|---|---|
