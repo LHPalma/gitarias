@@ -189,7 +189,9 @@ Confirmado quebrando a mesma consulta por `--by-repo`: **380** dos 1340 eram daq
 
 ## 6. Testes
 
-**100% de statements** em `internal/profile`, `internal/forge` e `cmd/profile.go`, mais os arquivos de tabela do `--by-repo`.
+**100% de statements** em `internal/profile`, `internal/forge` e nos arquivos de tabela do `--by-repo`.
+
+**Em `cmd/profile.go` falta um ponto:** o `runAccountCommitCountByRepository` mede 91,7%. É o caminho mais ramificado do comando — janela, merge entre janelas e bisecção — e o que sobra descoberto ali são ramos de erro da apresentação, não da contagem.
 
 | Área | Cobertura |
 |---|---|
