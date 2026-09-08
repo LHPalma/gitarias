@@ -45,6 +45,7 @@ Especificar o `gtr ai-trailers strip`, que **remove** trailers de autoria de IA 
 ```text
 internal/aitrailers/
 ├── strip.go                 Strip(rawMessage, rawBlock, unfoldedBlock) (string, bool) — função pura
+├── plan.go                  StripPlan: o HEAD para recuperação, e os commits que seriam reescritos
 └── repo.go                  PlanStrip, Strip, StripHead, window; const StripStepCommand
 
 cmd/ai_trailers.go           newAITrailersStripCommand, runAITrailersStrip, o subcomando oculto
