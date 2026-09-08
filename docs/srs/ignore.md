@@ -277,7 +277,16 @@ origem,linha,padrão,caminho
 
 ## 6. Testes
 
-**100% em `cmd`, `internal/ignore` e `internal/format`.**
+**100% em `internal/format`.** No `internal/ignore` e nos arquivos de `cmd` deste comando, não — e os quatro pontos ficam registrados com o número medido, em vez de arredondados:
+
+| Onde | Cobertura | O que sobra |
+|---|---|---|
+| `ignore.Add` | 96,7% | ramos de erro entre as seis verificações |
+| `ignore.defaultGlobalExcludesPath` | 88,9% | o caminho de `HOME` ausente, que exige uma máquina sem ela |
+| `ignore.appendLine` | 93,3% | falha de escrita depois do arquivo aberto |
+| `cmd.newIgnoreListCommand` | 88,9% | ramos da completion, que o teste não invoca pelo protocolo do shell |
+
+Nenhum deles é caminho de decisão — são bordas de erro e de ambiente. Ainda assim são o que separa este comando da barra do projeto, e é por isso que estão aqui.
 
 **A suíte inteira roda contra o fake.** A pipeline foi conferida contra o `git` 2.43.0 antes da implementação, e o binário foi exercitado em repositório real a cada entrega — é a defesa contra o buraco que o CONTRIBUTING nomeia: nada no portão do CI depende do git de verdade.
 
