@@ -119,7 +119,7 @@ Toda a lógica de reconstrução do `strip.go` se apoia nisso: cortar o `rawBloc
 
 ## 6. Testes
 
-**100% de statements** na parte de remoção do `internal/aitrailers` e nos arquivos de `cmd` do `strip`.
+**100% de statements** na parte de remoção do `internal/aitrailers`. **No `cmd`, o `runAITrailersStrip` mede 96,2%** — o que sobra são ramos de erro de escrita da prévia, não do caminho que reescreve.
 
 | # | Cenário | Esperado |
 |---|---|---|
