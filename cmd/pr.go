@@ -24,6 +24,7 @@ func newPullRequestCommand(runner git.Runner, commands exec.Runner) *cobra.Comma
 	}
 
 	command.AddCommand(newPullRequestListCommand(runner, commands))
+	command.AddCommand(newPullRequestScanCommand(runner, commands))
 
 	return command
 }
