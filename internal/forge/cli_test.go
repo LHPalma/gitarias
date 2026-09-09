@@ -26,7 +26,7 @@ func answering(output string) *exectest.Runner {
 }
 
 func TestPullRequestsReadsWhatTheGhReturned(t *testing.T) {
-	requests, err := NewCLI(answering(listed)).PullRequests(t.Context(), 30)
+	requests, err := NewCLI(answering(listed)).PullRequests(t.Context(), "open", 30)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -47,8 +47,31 @@ func TestPullRequestsReadsWhatTheGhReturned(t *testing.T) {
 	}
 }
 
+func TestPullRequestsReadsTheBody(t *testing.T) {
+	body := `[{"number":4,"title":"documento","body":"Fecha o #12.\r\n\r\nCo-Authored-By: Claude <noreply@anthropic.com>"}]`
+
+	requests, err := NewCLI(answering(body)).PullRequests(t.Context(), "open", 30)
+
+	if err != nil {
+		t.Fatalf("nao esperava erro, veio %v", err)
+	}
+	if !strings.Contains(requests[0].Body, "Co-Authored-By") {
+		t.Errorf("body = %q; e o unico lugar onde o scan tem o que procurar", requests[0].Body)
+	}
+}
+
+func TestPullRequestsCarriesTheStateToTheGh(t *testing.T) {
+	commands := answering(listed)
+
+	NewCLI(commands).PullRequests(t.Context(), "merged", 30)
+
+	if !strings.Contains(strings.Join(commands.Calls[0].Args, " "), "--state merged") {
+		t.Errorf("chamada = %v, o estado pedido tem de chegar", commands.Calls[0].Args)
+	}
+}
+
 func TestPullRequestsLowercasesTheState(t *testing.T) {
-	requests, _ := NewCLI(answering(listed)).PullRequests(t.Context(), 30)
+	requests, _ := NewCLI(answering(listed)).PullRequests(t.Context(), "open", 30)
 
 	if requests[0].State != "open" {
 		t.Errorf("estado = %q; no json o token e minusculo, e o gh grita em maiuscula", requests[0].State)
@@ -58,7 +81,7 @@ func TestPullRequestsLowercasesTheState(t *testing.T) {
 func TestPullRequestsAsksForEveryFieldItReads(t *testing.T) {
 	commands := answering(listed)
 
-	if _, err := NewCLI(commands).PullRequests(t.Context(), 30); err != nil {
+	if _, err := NewCLI(commands).PullRequests(t.Context(), "open", 30); err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
 	}
 
@@ -76,7 +99,7 @@ func TestPullRequestsAsksForEveryFieldItReads(t *testing.T) {
 func TestPullRequestsRunsTheGh(t *testing.T) {
 	commands := answering(listed)
 
-	NewCLI(commands).PullRequests(t.Context(), 5)
+	NewCLI(commands).PullRequests(t.Context(), "open", 5)
 
 	if commands.Calls[0].Name != "gh" {
 		t.Errorf("chamou %q; quem fala com o GitHub e o gh, e e por isso que o gtr nao ve o token", commands.Calls[0].Name)
@@ -89,7 +112,7 @@ func TestPullRequestsRunsTheGh(t *testing.T) {
 func TestPullRequestsSaysWhenTheGhIsNotThere(t *testing.T) {
 	commands := exectest.NewRunner(exectest.Response{Err: errors.New("executable file not found in $PATH")})
 
-	_, err := NewCLI(commands).PullRequests(t.Context(), 30)
+	_, err := NewCLI(commands).PullRequests(t.Context(), "open", 30)
 
 	if !errors.Is(err, ErrUnavailable) {
 		t.Errorf("erro = %v; gh ausente se resolve instalando, e a falha de rede nao", err)
@@ -101,7 +124,7 @@ func TestPullRequestsPropagatesWhatTheGhComplained(t *testing.T) {
 		Result: exec.Result{Code: 1, Output: "gh: Not Found (HTTP 404)"},
 	})
 
-	_, err := NewCLI(commands).PullRequests(t.Context(), 30)
+	_, err := NewCLI(commands).PullRequests(t.Context(), "open", 30)
 
 	if err == nil {
 		t.Fatal("gh que roda e recusa tem de virar erro")
@@ -115,7 +138,7 @@ func TestPullRequestsPropagatesWhatTheGhComplained(t *testing.T) {
 }
 
 func TestPullRequestsRefusesAnAnswerItCannotRead(t *testing.T) {
-	_, err := NewCLI(answering("isto nao e json")).PullRequests(t.Context(), 30)
+	_, err := NewCLI(answering("isto nao e json")).PullRequests(t.Context(), "open", 30)
 
 	if err == nil {
 		t.Fatal("resposta ilegivel tem de virar erro, e nao lista vazia")
@@ -123,7 +146,7 @@ func TestPullRequestsRefusesAnAnswerItCannotRead(t *testing.T) {
 }
 
 func TestPullRequestsOfARepositoryWithoutAny(t *testing.T) {
-	requests, err := NewCLI(answering("[]")).PullRequests(t.Context(), 30)
+	requests, err := NewCLI(answering("[]")).PullRequests(t.Context(), "open", 30)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -137,7 +160,7 @@ func TestPullRequestsHonoursCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	if _, err := NewCLI(answering(listed)).PullRequests(ctx, 30); err == nil {
+	if _, err := NewCLI(answering(listed)).PullRequests(ctx, "open", 30); err == nil {
 		t.Fatal("contexto cancelado tem de parar a chamada")
 	}
 }

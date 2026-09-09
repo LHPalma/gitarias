@@ -63,13 +63,26 @@ func runPullRequestList(command *cobra.Command, source forge.Source, options pul
 	ctx, cancel := context.WithTimeout(command.Context(), networkDeadline)
 	defer cancel()
 
-	requests, err := source.PullRequests(ctx, options.limit)
-	if errors.Is(err, forge.ErrUnavailable) {
-		return fmt.Errorf("o gtr pr fala com o GitHub pelo gh, e ele não está no PATH; rode gtr setup para ver como instalar")
-	}
+	requests, err := source.PullRequests(ctx, openPullRequests, options.limit)
 	if err != nil {
-		return err
+		return pullRequestFailure(err)
 	}
 
 	return emit(command.OutOrStdout(), options.output, "pull-requests", chosen, pullRequestsTable{requests: requests})
+}
+
+// openPullRequests é o estado que o list mostra, e o único que ele mostra:
+// pull request fechado ou mergeado não se revisa nem se cruza com as branches
+// locais.
+const openPullRequests = "open"
+
+// pullRequestFailure separa a recusa que se resolve instalando o gh das
+// demais. É comum ao list e ao scan porque a instalação ausente é a mesma
+// para os dois, e mandar instalar um gh que já está lá confundiria.
+func pullRequestFailure(err error) error {
+	if errors.Is(err, forge.ErrUnavailable) {
+		return fmt.Errorf("o gtr pr fala com o GitHub pelo gh, e ele não está no PATH; rode gtr setup para ver como instalar")
+	}
+
+	return err
 }

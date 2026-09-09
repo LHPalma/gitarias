@@ -16,7 +16,12 @@ import (
 // fields são os campos pedidos ao gh, e a ordem não importa para ele. É
 // formato contratual: o gh recusa nome de campo que não conhece, então um erro
 // de digitação aqui falha alto em vez de devolver silêncio.
-var fields = []string{"number", "title", "headRefName", "baseRefName", "author", "state", "isDraft", "url"}
+//
+// O body entrou pelo scan e é a lista inteira que o paga, list incluído: uma
+// lista de campos só, um struct de resposta só, e os dois comandos nunca
+// divergem sobre o que um pull request é. O custo é o payload, limitado pelo
+// --limit de quem chama.
+var fields = []string{"number", "title", "headRefName", "baseRefName", "author", "state", "isDraft", "url", "body"}
 
 var (
 	// ErrUnavailable é o gh ausente ou impedido de rodar. O front distingue
@@ -44,9 +49,14 @@ func NewCLI(commands exec.Runner) *CLI {
 	return &CLI{commands: commands}
 }
 
-func (source *CLI) PullRequests(ctx context.Context, limit int) ([]PullRequest, error) {
+// PullRequests devolve os pull requests do repositório do diretório atual no
+// estado pedido — open, closed, merged ou all, os mesmos nomes que o gh
+// aceita. O estado vai explícito mesmo quando é o open que o gh assumiria
+// sozinho: o padrão de quem chama fica escrito na chamada, não herdado.
+func (source *CLI) PullRequests(ctx context.Context, state string, limit int) ([]PullRequest, error) {
 	arguments := []string{
 		"pr", "list",
+		"--state", state,
 		"--json", strings.Join(fields, ","),
 		"--limit", strconv.Itoa(limit),
 	}
@@ -72,6 +82,7 @@ type listing struct {
 	State  string `json:"state"`
 	Draft  bool   `json:"isDraft"`
 	URL    string `json:"url"`
+	Body   string `json:"body"`
 	Author struct {
 		Login string `json:"login"`
 	} `json:"author"`
@@ -94,6 +105,7 @@ func parse(output string) ([]PullRequest, error) {
 			State:  strings.ToLower(entry.State),
 			Draft:  entry.Draft,
 			URL:    entry.URL,
+			Body:   entry.Body,
 		})
 	}
 
