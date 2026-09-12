@@ -20,6 +20,9 @@ func NewRootCommand(runner Runner, commands exec.Runner, client web.Client, find
 		Long:          "gitarias (gtr) — utilitários para as tarefas repetitivas de git local.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		RunE: func(command *cobra.Command, args []string) error {
+			return runInteractiveHelp(command)
+		},
 	}
 
 	command.AddCommand(newAuthorCommand(runner))
