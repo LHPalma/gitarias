@@ -9,7 +9,7 @@ import (
 // caminhos previstos: embrulhar o gh, que já resolve autenticação e host, e
 // falar HTTP com o token do ambiente, para onde o gh não está instalado.
 type Source interface {
-	PullRequests(ctx context.Context, limit int) ([]PullRequest, error)
+	PullRequests(ctx context.Context, state string, limit int) ([]PullRequest, error)
 	Viewer(ctx context.Context) (string, error)
 	Scopes(ctx context.Context) ([]string, error)
 	AccountCommitCount(ctx context.Context, since time.Time, until time.Time) (int, error)

@@ -17,7 +17,7 @@ type answers struct {
 	err    error
 }
 
-func (source answers) PullRequests(context.Context, int) ([]forge.PullRequest, error) {
+func (source answers) PullRequests(context.Context, string, int) ([]forge.PullRequest, error) {
 	return nil, nil
 }
 
