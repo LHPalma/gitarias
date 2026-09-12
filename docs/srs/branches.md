@@ -7,6 +7,8 @@ pacotes:
   - cmd/branches.go
   - internal/branch
   - internal/git
+  - internal/ui
+  - tui
 commits:
   - 5aa5448
   - 72a457f
@@ -19,6 +21,9 @@ commits:
   - b6d48b6
   - 567416b
   - 5a41f68
+  - b33c290
+  - 14e6022
+  - afcdd46
 fonte_externa: nenhuma
 ---
 
@@ -74,7 +79,10 @@ internal/branch/              domínio — não imprime nada
 ├── delete_result.go          DeleteResult
 └── repo.go                   Repo: Ensure, ResolveBase, Merged, Delete
 
-cmd/branches.go               front de texto
+internal/ui/selector.go        contrato Selector([]Branch) ([]Branch, error) — ADR-002
+
+cmd/branches.go               front de texto — confirmSelector, resolveSelector
+tui/                           front interativo — model (Update puro) + BranchSelector
 ```
 
 ### 2.2 Fluxo
@@ -127,6 +135,14 @@ São aceitos como confirmação: `y`, `yes`, `s`, `sim`, em qualquer caixa. **Qu
 
 Fora de um repositório git, ou sem base determinável, o comando escreve no `stderr` e sai com código 1. Falha parcial na deleção também sai com 1, depois de tentar todas.
 
+### RF-07-A — Escolher interativamente quais apagar
+
+`gtr branches --clean --interactive` (ou `-i`) troca a pergunta `[y/N]` por uma lista de checkboxes em tela cheia — o contrato `ui.Selector` da **ADR-002**. Todas as candidatas começam marcadas; `espaço` alterna uma, `a`/`n` marcam ou desmarcam todas, `enter` confirma a seleção atual e `esc`/`q`/`ctrl+c` cancela sem apagar nada. Fora isso, o resto do fluxo — filtro por `--force`, deleção, registro no diário do `undo`, relatório de sucesso e falha — é o mesmo dos dois fronts.
+
+### RF-07-B — Recusar `--interactive` sem terminal
+
+`--interactive` exige um terminal de verdade. Sem ele, o comando **falha** em vez de cair em silêncio para o `[y/N]` — a flag foi pedida explicitamente, e cair para outro front sem avisar esconderia um bug de quem automatiza o `gtr`. A detecção é `term.IsTerminal` sobre o `stdout`; como esse stream chega como `io.Writer` (**ADR-003**), a checagem faz um type assertion para `*os.File` e trata qualquer outra coisa — pipe, arquivo redirecionado, `*bytes.Buffer` de teste — como "não é terminal".
+
 ### RF-07 — Segurar branch em uso por outro working tree
 
 Branch em checkout em outro working tree **não entra na lista nem na contagem**. Ela ganha seção própria, com o **caminho** do working tree que a prende e as três formas de soltar:
@@ -163,6 +179,8 @@ Sem informação de working trees (falha do `git worktree list`), a proteção �
 | **RN-10** | **Nenhuma linha de saída termina em espaço.** Em colunas alinhadas por `tabwriter`, uma célula final vazia deixa lixo invisível no fim da linha, visível em `grep` e em comparação de saída. |
 | **RN-11** | **Nada em `internal/branch` escreve na tela nem lê do teclado.** O domínio devolve dados — `[]Branch`, `[]DeleteResult` — e quem imprime é a apresentação. Vale também para texto de exibição: `BaseSource` é enum, e a frase "detectada via origin/HEAD" é escolhida na apresentação. Detalhe em **ADR-003**. |
 | **RN-12** | **Nunca oferecer o que o git não pode cumprir.** `git branch -D` recusa branch presa em worktree **pelo mesmo motivo** que o `-d` — a recusa é absoluta, e nenhuma flag do `gtr` a contorna. Mesmo argumento da `RN-02` para a branch atual. Filtrar preventivamente não é preferência de UX; é a única resposta correta. **Filtrar em silêncio, porém, esconde a informação útil** — daí a seção própria em vez da omissão. |
+| **RN-13** | **`--interactive` só vale com `--clean`.** Escolher o quê sem ter dito que vai apagar não tem efeito nenhum a decidir; o comando recusa antes de tocar o git. |
+| **RN-14** | **A ordem `filtrar → Select → Delete` da ADR-002 vale para os dois fronts.** `--force` decide quais candidatas chegam ao `Selector`; o `Selector` — texto ou TUI — nunca vê a que a autorização não cobre, e portanto nunca pode marcá-la. |
 
 ---
 
@@ -185,6 +203,7 @@ Use --clean para deletar.
 | `--clean` | `false` | Deleta as branches listadas, após confirmação |
 | `--base <branch>` | vazio | Define a base; vazio aciona a detecção automática |
 | `--force` | `false` | Com `--clean`, autoriza `-D` nas squashadas e rebaseadas |
+| `--interactive`, `-i` | `false` | Com `--clean`, troca o `[y/N]` pela lista de checkboxes; exige terminal |
 
 ---
 
@@ -245,10 +264,13 @@ Passar essa string para `git branch -d` produz erro confuso e saída 1. **A corr
 | `b6d48b6` | `deletable(merged, force)` — a decisão de segurança vira função própria |
 | `567416b` | Testes do front de texto — `RF-04`, `RN-09`, `RN-10` |
 | `5a41f68` | Testes do comando de ponta a ponta contra git roteirizado |
+| `b33c290` | Dependências da TUI — `bubbletea`, `lipgloss`, `x/term` — e as licenças de terceiros |
+| `14e6022` | Contrato `ui.Selector` e o `tui.BranchSelector` — checkbox, sem `cmd` ainda enxergar |
+| `afcdd46` | `--interactive`/`-i` em `branches --clean`, com a detecção de terminal — `RF-07-A`, `RF-07-B` |
 
 ---
 
 ## 8. Follow-ups conhecidos
 
 - **Lista de protegidas cravada no código** — `main` e `master` são literais. O arquivo de configuração de **ADR-004** paga isso.
-- **Seleção interativa** de *quais* branches apagar, em vez de tudo-ou-nada — **ADR-002**.
+- **Entregue:** seleção interativa de *quais* branches apagar, em vez de tudo-ou-nada — `--interactive`/`-i`, sob o contrato `ui.Selector` da **ADR-002**. `RF-07-A`, `RF-07-B`, `RN-13`, `RN-14`.

@@ -1,7 +1,7 @@
 ---
 titulo: ADR-002 — Dois front-ends e o contrato Selector
 data: 2026-08-05
-status: proposta
+status: entregue
 escopo: internal/ui, tui/, cmd/
 supersede: o modelo tudo-ou-nada do [y/N] como única forma de seleção
 ---
@@ -9,7 +9,7 @@ supersede: o modelo tudo-ou-nada do [y/N] como única forma de seleção
 # ADR-002 — Dois front-ends e o contrato Selector
 
 - **Data:** 2026-08-05
-- **Status:** **proposta** — o contrato e a TUI não existem; todos os pré-requisitos estão entregues, inclusive o `internal/ui`
+- **Status:** **entregue** — `ui.Selector`, o `tui/` e o `gtr branches --clean --interactive` estão na `main`
 - **Escopo:** `internal/ui`, `tui/`, `cmd/`
 - **Supersede:** o modelo tudo-ou-nada do `[y/N]` como única forma de seleção
 
@@ -115,6 +115,14 @@ O `tui/` **não** vira exceção à barra de cobertura. Vale a regra que o proje
 **Armadilha registrada:** não asserte sobre a saída estilizada do `View`. O `lipgloss` emite ANSI, e o resultado depende de perfil de cor e largura de terminal — teste que quebra por motivo errado. Asserte sobre o estado do modelo depois do `Update`, e sobre conteúdo sem estilo.
 
 Fazer do `tui/` uma exceção seria a primeira vez que o projeto baixa a própria barra, e o custo apareceria noutro lugar: **se a camada de apresentação ficar difícil de testar, o sintoma é lógica no lugar errado** — que é o que o contrato e a regra do domínio que não imprime existem para impedir.
+
+## Nota de entrega
+
+O `-i`/`--interactive` chegou só no `branches --clean`, exatamente o caso de uso desta ADR. A lista começa com tudo marcado — `enter` reproduz o efeito do `[y/N]` antigo sem exigir que quem usa marque uma a uma; `a`/`n` marcam ou desmarcam todas de uma vez, e `espaço` alterna uma.
+
+**`bubbles` não entrou junto.** A tela de checkbox não usa lista com filtro nem tabela — só `bubbletea` e `lipgloss` são importados agora. `bubbles` fica para quando a primeira tela de tabela ou lista (`stats`, `changelog`) precisar dele de verdade; declará-lo sem uso violaria a mesma regra que a ADR já aplica a outra escolha (§ "Bibliotecas avaliadas"): a decisão descreve o que vem depois, mas o `go.mod` só ganha o que o código importa.
+
+**A cobertura do `tui/` fechou em 89,8%.** O único descoberto é `BranchSelector.Select`, na linha exata que chama `tea.NewProgram(...).Run()` — o boundary que a seção "Cobertura do `tui/`" já previa. `newModel`, `Update`, `View` e `selected` estão 100% cobertos por teste direto, sem terminal.
 
 ## Alternativas consideradas
 
