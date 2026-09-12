@@ -25,6 +25,21 @@ presente, o binário sai dinamicamente ligado à libc e exige `GLIBC_2.34` na
 máquina de destino — o que anula a promessa de distribuir copiando um arquivo.
 Em macOS e Windows o problema não existe, mas a variável não atrapalha.
 
+**No Windows**, `install.bat` faz o equivalente e já deixa o `gtr` no `PATH`:
+compila com `go build` e grava em `%GOBIN%` (ou `%GOPATH%\bin`, o padrão do
+Go), a mesma pasta que `go install` usaria. Roda de qualquer diretório —
+entra sozinho na raiz do repositório antes de compilar.
+
+```console
+> install.bat
+gtr instalado em C:\Users\você\go\bin\gtr.exe
+Rode "gtr --help" de qualquer lugar para conferir.
+```
+
+Ainda exige Go instalado — não há binário pré-compilado para quem não tem a
+toolchain; o `install.bat` avisa e aponta para go.dev/dl se não achar `go`
+no `PATH`.
+
 ## Comandos
 
 ### `gtr branches`
