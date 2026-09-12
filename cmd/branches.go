@@ -15,15 +15,17 @@ import (
 	"github.com/LHPalma/gitarias/internal/ui"
 	"github.com/LHPalma/gitarias/internal/undo"
 	"github.com/LHPalma/gitarias/internal/worktree"
+	"github.com/LHPalma/gitarias/tui"
 	"github.com/spf13/cobra"
 )
 
 type branchesOptions struct {
 	formatOptions
-	base  string
-	clean bool
-	force bool
-	tree  bool
+	base        string
+	clean       bool
+	force       bool
+	interactive bool
+	tree        bool
 }
 
 func newBranchesCommand(runner git.Runner) *cobra.Command {
@@ -41,6 +43,7 @@ func newBranchesCommand(runner git.Runner) *cobra.Command {
 	command.Flags().StringVar(&options.base, "base", "", "branch base; se omitida, é detectada automaticamente")
 	command.Flags().BoolVar(&options.clean, "clean", false, "deleta as branches mergeadas, pedindo confirmação")
 	command.Flags().BoolVar(&options.force, "force", false, "com --clean, força a deleção das squashadas e rebaseadas, que o git recusa apagar com -d")
+	command.Flags().BoolVarP(&options.interactive, "interactive", "i", false, "com --clean, escolhe numa lista quais branches apagar, em vez de tudo ou nada; exige terminal")
 	command.Flags().BoolVar(&options.tree, "tree", false, "mostra todas as branches locais como árvore, cada uma sob aquela em que foi empilhada")
 	options.register(command)
 
@@ -59,6 +62,10 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 
 	if options.tree && options.clean {
 		return fmt.Errorf("--tree não vale com --clean; a árvore mostra tudo, inclusive o que não pode ser deletado")
+	}
+
+	if options.interactive && !options.clean {
+		return fmt.Errorf("--interactive só vale com --clean; --clean é quem decide o que apagar")
 	}
 
 	ctx := command.Context()
@@ -115,18 +122,21 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 		return nil
 	}
 
-	question := fmt.Sprintf("Deletar %d %s? [y/N] ", len(candidates), ui.Plural(len(candidates), "branch", "branches"))
-
-	confirmed, err := confirm(command.InOrStdin(), output, question)
+	selector, err := resolveSelector(command, options)
 	if err != nil {
 		return err
 	}
-	if !confirmed {
+
+	selected, err := selector.Select(candidates)
+	if err != nil {
+		return err
+	}
+	if len(selected) == 0 {
 		fmt.Fprintln(output, "Cancelado, nada foi deletado.")
 		return nil
 	}
 
-	results := repo.Delete(ctx, candidates, options.force)
+	results := repo.Delete(ctx, selected, options.force)
 
 	if err := journal.Record(ctx, deletions(results)); err != nil {
 		fmt.Fprintln(errorOutput, "aviso: não consegui registrar o que foi deletado, então o gtr undo não vai enxergar estas branches:", err)
@@ -225,6 +235,44 @@ func printMerged(output io.Writer, merged []branch.Branch) error {
 	fmt.Fprintln(output)
 
 	return nil
+}
+
+// confirmSelector é o front de texto do contrato ui.Selector: pergunta
+// [y/N] e devolve todas as candidatas ou nenhuma.
+type confirmSelector struct {
+	input  io.Reader
+	output io.Writer
+}
+
+func (selector confirmSelector) Select(candidates []branch.Branch) ([]branch.Branch, error) {
+	question := fmt.Sprintf("Deletar %d %s? [y/N] ", len(candidates), ui.Plural(len(candidates), "branch", "branches"))
+
+	confirmed, err := confirm(selector.input, selector.output, question)
+	if err != nil {
+		return nil, err
+	}
+	if !confirmed {
+		return nil, nil
+	}
+
+	return candidates, nil
+}
+
+// resolveSelector escolhe o front de seleção: texto por padrão, ou a TUI com
+// --interactive. A TUI exige terminal de verdade — sem ele, falha em vez de
+// cair em silêncio para o texto, porque a flag foi pedida explicitamente.
+func resolveSelector(command *cobra.Command, options branchesOptions) (ui.Selector, error) {
+	output := command.OutOrStdout()
+
+	if !options.interactive {
+		return confirmSelector{input: command.InOrStdin(), output: output}, nil
+	}
+
+	if !isTerminal(output) {
+		return nil, fmt.Errorf("--interactive exige um terminal, e a saída não é uma")
+	}
+
+	return tui.NewBranchSelector(command.InOrStdin(), output), nil
 }
 
 func deletable(merged []branch.Branch, force bool) []branch.Branch {

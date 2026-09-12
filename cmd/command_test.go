@@ -831,6 +831,33 @@ func TestWorktreesCommandShowsTheStateColumn(t *testing.T) {
 	}
 }
 
+func TestBranchesCommandInteractiveWithoutCleanFails(t *testing.T) {
+	result := execute(t, repository("main", "main\nfeat-a", "main\nfeat-a", "main"), "", "branches", "--interactive")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(result.err.Error(), "--interactive só vale com --clean") {
+		t.Errorf("erro = %v, queria a mensagem específica", result.err)
+	}
+}
+
+func TestBranchesCommandInteractiveWithoutTerminalFails(t *testing.T) {
+	result := execute(t, repository("main", "main\nfeat-a", "main\nfeat-a", "main"), "", "branches", "--clean", "--interactive")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(result.err.Error(), "--interactive exige um terminal") {
+		t.Errorf("erro = %v, queria a mensagem específica", result.err)
+	}
+	for _, call := range result.calls {
+		if deletesABranch(call) {
+			t.Fatalf("sem terminal nada pode ser deletado, mas rodou %q", call)
+		}
+	}
+}
+
 func TestBranchesCommandUsesTheRequestedBase(t *testing.T) {
 	responses := map[string]gittest.Response{
 		"rev-parse --is-inside-work-tree":                                     {Output: "true"},
