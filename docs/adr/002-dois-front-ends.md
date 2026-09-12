@@ -124,6 +124,8 @@ O `-i`/`--interactive` chegou só no `branches --clean`, exatamente o caso de us
 
 **A cobertura do `tui/` fechou em 89,8%.** O único descoberto é `BranchSelector.Select`, na linha exata que chama `tea.NewProgram(...).Run()` — o boundary que a seção "Cobertura do `tui/`" já previa. `newModel`, `Update`, `View` e `selected` estão 100% cobertos por teste direto, sem terminal.
 
+**Um segundo uso chegou logo depois, fora do caso de uso original: `gtr` sem subcomando abre um menu navegável de comandos**, quando há terminal — ver [SRS — menu interativo de ajuda](../srs/interactive-help.md). Reaproveita a mesma arquitetura (`tui/` com `Update` puro, `cmd/` decidindo quando acionar), mas difere num ponto: a interatividade aqui é **detecção automática**, não flag explícita, então a ausência de terminal cai em silêncio para o help de texto — exatamente o segundo ramo que a seção "Detecção de TTY" já previa e que o `branches --clean -i` nunca exercitou, por ser sempre pedido explícito.
+
 ## Alternativas consideradas
 
 **Escrever o contrato agora, antes da TUI.** Rejeitada, e por razão empírica: **esta interface já torceu uma vez sozinha.** Ela foi desenhada antes da detecção de equivalência e passou a descrever um modelo que não existe mais. Interface com uma implementação só, desenhada antes de a segunda existir, é onde abstração nasce torta. O contrato sai junto com a TUI.
