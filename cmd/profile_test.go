@@ -813,3 +813,227 @@ func TestProfileStreakPropagatesTheWriteFailureWithoutAnyCommit(t *testing.T) {
 		t.Fatal("falha de escrita tem de virar erro")
 	}
 }
+
+func profileMomentsCall(identity string, since string, until string) string {
+	return "log --format=%ad --date=iso-strict-local --author=" + identity +
+		" --since=" + since + " 00:00:00 --until=" + until + " 23:59:59"
+}
+
+// brokenDown roteiriza o recorte local num período cravado, para a saída não
+// depender do dia em que o teste roda.
+func brokenDown(log string) map[string]gittest.Response {
+	responses := profiled()
+	responses["rev-parse --verify --quiet HEAD"] = gittest.Response{Output: "abc123"}
+	responses[profileMomentsCall("real@real.com", "2026-09-01", "2026-09-13")] = gittest.Response{Output: log}
+
+	return responses
+}
+
+const brokenDownLog = "2026-09-13T22:41:07+00:00\n2026-09-13T22:58:00+00:00\n2026-09-07T09:15:00+00:00\n"
+
+func brokenDownArgs(recorte string, extras ...string) []string {
+	return append([]string{"profile", "--commit-count", recorte, "--since", "2026-09-01", "--until", "2026-09-13"}, extras...)
+}
+
+func TestProfileByHourListsEveryHour(t *testing.T) {
+	result := execute(t, brokenDown(brokenDownLog), "", brokenDownArgs("--by-hour")...)
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if lines := strings.Count(result.stdout, "\n"); lines != 25 {
+		t.Errorf("linhas = %d, queria cabeçalho mais as 24 horas", lines)
+	}
+	if !strings.HasPrefix(result.stdout, "  HORA  COMMITS\n") {
+		t.Errorf("saída = %q, queria o cabeçalho da tabela", result.stdout)
+	}
+	for _, line := range []string{"  09h   1\n", "  22h   2\n"} {
+		if !strings.Contains(result.stdout, line) {
+			t.Errorf("saída = %q, queria a linha %q", result.stdout, line)
+		}
+	}
+	if !strings.Contains(result.stdout, "  05h   0\n") {
+		t.Errorf("saída = %q; hora sem commit sai zerada, não some da tabela", result.stdout)
+	}
+}
+
+func TestProfileByWeekdayStartsOnMonday(t *testing.T) {
+	result := execute(t, brokenDown(brokenDownLog), "", brokenDownArgs("--by-weekday")...)
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+
+	wanted := "  DIA      COMMITS\n  segunda  1\n  terça    0\n  quarta   0\n  quinta   0\n  sexta    0\n  sábado   0\n  domingo  2\n"
+	if result.stdout != wanted {
+		t.Errorf("saída = %q, queria %q", result.stdout, wanted)
+	}
+}
+
+func TestProfileByHourCSVCarriesTheRawHour(t *testing.T) {
+	result := execute(t, brokenDown(brokenDownLog), "", brokenDownArgs("--by-hour", "--format", "csv")...)
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.HasPrefix(result.stdout, "hora,commits\n0,0\n") {
+		t.Errorf("saída = %q; o csv leva a hora crua, que ordena e soma, não o \"22h\" da tela", result.stdout)
+	}
+	if !strings.Contains(result.stdout, "\n22,2\n") {
+		t.Errorf("saída = %q, queria a linha das 22h", result.stdout)
+	}
+}
+
+func TestProfileByWeekdayJSONCarriesTheName(t *testing.T) {
+	result := execute(t, brokenDown(brokenDownLog), "", brokenDownArgs("--by-weekday", "--format", "json")...)
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+
+	var document struct {
+		Weekdays []struct {
+			Weekday string `json:"weekday"`
+			Commits int    `json:"commits"`
+		} `json:"weekdays"`
+	}
+	if err := json.Unmarshal([]byte(result.stdout), &document); err != nil {
+		t.Fatalf("json ilegível: %v", err)
+	}
+	if len(document.Weekdays) != 7 {
+		t.Fatalf("dias = %d, a semana inteira tem de sair", len(document.Weekdays))
+	}
+	if document.Weekdays[0].Weekday != "segunda" || document.Weekdays[0].Commits != 1 {
+		t.Errorf("primeiro dia = %+v; o nome vai no json, não o número do enum", document.Weekdays[0])
+	}
+}
+
+func TestProfileBreakdownsRefuseTheWrongCombinations(t *testing.T) {
+	tests := [][]string{
+		{"profile", "--by-hour"},
+		{"profile", "--streak", "--by-hour"},
+		{"profile", "--streak", "--by-weekday"},
+		{"profile", "--commit-count", "--by-hour", "--by-weekday"},
+		{"profile", "--commit-count", "--account", "--by-hour"},
+		{"profile", "--commit-count", "--account", "--by-weekday"},
+	}
+
+	for _, args := range tests {
+		t.Run(strings.Join(args[1:], " "), func(t *testing.T) {
+			result := execute(t, profiled(), "", args...)
+
+			if result.err == nil {
+				t.Fatalf("%v tem de recusar", args)
+			}
+			if len(result.calls) != 0 {
+				t.Errorf("chamadas = %v, a validação vem antes de tocar no git", result.calls)
+			}
+		})
+	}
+}
+
+func TestProfileFormatFlagsAcceptEveryBreakdown(t *testing.T) {
+	for _, recorte := range []string{"--by-hour", "--by-weekday"} {
+		t.Run(recorte, func(t *testing.T) {
+			result := execute(t, brokenDown(brokenDownLog), "", brokenDownArgs(recorte, "--format", "csv")...)
+
+			if result.err != nil {
+				t.Fatalf("%s tem tabela, então aceita --format; veio %v", recorte, result.err)
+			}
+		})
+	}
+}
+
+func TestProfileBreakdownErrorsWithoutAnyIdentityConfigured(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		profileUserEmail:                  {Err: &git.ExitError{Code: 1, Message: ""}},
+		profileUserName:                   {Err: &git.ExitError{Code: 1, Message: ""}},
+	}
+
+	if result := execute(t, responses, "", brokenDownArgs("--by-hour")...); result.err == nil {
+		t.Fatal("sem identidade configurada tem de virar erro")
+	}
+}
+
+func TestProfileBreakdownPropagatesTheIdentityFailure(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		profileUserEmail:                  {Err: errNotARepository},
+	}
+
+	if result := execute(t, responses, "", brokenDownArgs("--by-weekday")...); result.err == nil {
+		t.Fatal("falha real ao ler a identidade tem de virar erro")
+	}
+}
+
+func TestProfileBreakdownPropagatesTheLogFailure(t *testing.T) {
+	responses := brokenDown("")
+	responses[profileMomentsCall("real@real.com", "2026-09-01", "2026-09-13")] = gittest.Response{Err: errNotARepository}
+
+	if result := execute(t, responses, "", brokenDownArgs("--by-hour")...); result.err == nil {
+		t.Fatal("falha do log tem de virar erro")
+	}
+}
+
+func TestProfileBreakdownsPropagateTheWriteFailure(t *testing.T) {
+	for _, recorte := range []string{"--by-hour", "--by-weekday"} {
+		t.Run(recorte, func(t *testing.T) {
+			command := NewRootCommand(gittest.NewRunner(brokenDown(brokenDownLog)), noCommands(), noWeb(), noFinder(), noNotices)
+			command.SetOut(brokenWriter{})
+			command.SetErr(&bytes.Buffer{})
+			command.SetArgs(brokenDownArgs(recorte))
+
+			if command.Execute() == nil {
+				t.Fatal("falha de escrita tem de virar erro")
+			}
+		})
+	}
+}
+
+func TestProfileBreakdownsNeverEndALineWithSpace(t *testing.T) {
+	for _, recorte := range []string{"--by-hour", "--by-weekday"} {
+		t.Run(recorte, func(t *testing.T) {
+			result := execute(t, brokenDown(brokenDownLog), "", brokenDownArgs(recorte)...)
+
+			for _, line := range strings.Split(result.stdout, "\n") {
+				if strings.HasSuffix(line, " ") {
+					t.Errorf("linha %q termina em espaço", line)
+				}
+			}
+		})
+	}
+}
+
+func TestProfileByHourJSONCarriesTheRawHour(t *testing.T) {
+	result := execute(t, brokenDown(brokenDownLog), "", brokenDownArgs("--by-hour", "--format", "json")...)
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+
+	var document struct {
+		Hours []struct {
+			Hour    int `json:"hour"`
+			Commits int `json:"commits"`
+		} `json:"hours"`
+	}
+	if err := json.Unmarshal([]byte(result.stdout), &document); err != nil {
+		t.Fatalf("json ilegível: %v", err)
+	}
+	if len(document.Hours) != 24 {
+		t.Fatalf("horas = %d, o dia inteiro tem de sair", len(document.Hours))
+	}
+	if document.Hours[22].Hour != 22 || document.Hours[22].Commits != 2 {
+		t.Errorf("hora 22 = %+v; o json leva o número, não o \"22h\" da tela", document.Hours[22])
+	}
+}
+
+func TestProfileByWeekdayPropagatesTheLogFailure(t *testing.T) {
+	responses := brokenDown("")
+	responses[profileMomentsCall("real@real.com", "2026-09-01", "2026-09-13")] = gittest.Response{Err: errNotARepository}
+
+	if result := execute(t, responses, "", brokenDownArgs("--by-weekday")...); result.err == nil {
+		t.Fatal("falha do log tem de virar erro também no recorte por dia da semana")
+	}
+}

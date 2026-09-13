@@ -20,6 +20,8 @@ type profileOptions struct {
 	streak      bool
 	account     bool
 	byRepo      bool
+	byHour      bool
+	byWeekday   bool
 	author      string
 	since       string
 	until       string
@@ -35,6 +37,9 @@ func newProfileCommand(runner Runner, commands exec.Runner) *cobra.Command {
 			"repositório viu, sem sair da máquina.\n\n" +
 			"--commit-count conta commits no período; --streak conta dias seguidos com\n" +
 			"commit, a sequência em curso e a maior do histórico. Uma por vez.\n\n" +
+			"--by-hour e --by-weekday quebram a contagem por hora do dia ou por dia da\n" +
+			"semana, no fuso desta máquina. São recortes locais do --commit-count, e\n" +
+			"herdam o período dele: sem --since, quebram o dia de hoje.\n\n" +
 			"Com --account, --commit-count conta em toda a conta do GitHub, não só\n" +
 			"aqui — FAZ CHAMADA DE REDE, pelo gh. A soma vale o que o token consegue\n" +
 			"ler: sem o escopo read:user, contribuições de repositório privado ficam\n" +
@@ -57,6 +62,10 @@ func newProfileCommand(runner Runner, commands exec.Runner) *cobra.Command {
 		"conta em toda a conta do GitHub, não só neste repositório; FAZ CHAMADA DE REDE")
 	command.Flags().BoolVar(&options.byRepo, "by-repo", false,
 		"quebra a soma de --account por repositório; só vale com --account")
+	command.Flags().BoolVar(&options.byHour, "by-hour", false,
+		"quebra a contagem por hora do dia, no fuso desta máquina; só vale com --commit-count")
+	command.Flags().BoolVar(&options.byWeekday, "by-weekday", false,
+		"quebra a contagem por dia da semana, no fuso desta máquina; só vale com --commit-count")
 	command.Flags().StringVar(&options.since, "since", "",
 		"início do período, AAAA-MM-DD; sem --until, vai até hoje; sem nenhuma das duas, só hoje")
 	command.Flags().StringVar(&options.until, "until", "", "fim do período, AAAA-MM-DD; sem --since, começa hoje")
@@ -71,7 +80,7 @@ func runProfile(command *cobra.Command, repo *profile.Repo, source forge.Source,
 	}
 
 	var chosen rendering
-	if options.byRepo {
+	if options.broken() {
 		resolved, err := options.resolve(command)
 		if err != nil {
 			return err
@@ -92,6 +101,10 @@ func runProfile(command *cobra.Command, repo *profile.Repo, source forge.Source,
 
 	if options.streak {
 		return runStreak(command, repo, options)
+	}
+
+	if options.byHour || options.byWeekday {
+		return runLocalBreakdown(command, repo, options, chosen, since, until)
 	}
 
 	if options.account {
@@ -132,8 +145,17 @@ func checkProfileFlags(command *cobra.Command, options profileOptions) error {
 	if options.byRepo && !options.account {
 		return fmt.Errorf("--by-repo só vale com --account")
 	}
-	if !options.byRepo && changedAnyFormatFlag(command) {
-		return fmt.Errorf("--format, --no-header, --output e --separator só valem com --by-repo")
+	if (options.byHour || options.byWeekday) && !options.commitCount {
+		return fmt.Errorf("--by-hour e --by-weekday são recortes do --commit-count")
+	}
+	if options.byHour && options.byWeekday {
+		return fmt.Errorf("escolha um recorte só: --by-hour ou --by-weekday")
+	}
+	if (options.byHour || options.byWeekday) && options.account {
+		return fmt.Errorf("--by-hour e --by-weekday são recortes locais; a contagem da conta não traz hora nem dia da semana")
+	}
+	if !options.broken() && changedAnyFormatFlag(command) {
+		return fmt.Errorf("--format, --no-header, --output e --separator só valem com --by-repo, --by-hour ou --by-weekday")
 	}
 	if options.streak && options.account {
 		return fmt.Errorf("--account só vale com --commit-count")
@@ -146,6 +168,13 @@ func checkProfileFlags(command *cobra.Command, options profileOptions) error {
 	}
 
 	return nil
+}
+
+// broken diz se alguma quebra está ligada — é o que decide se existe tabela
+// para as flags de formato agirem sobre. As três quebram a mesma contagem em
+// eixos diferentes: repositório, hora do dia, dia da semana.
+func (options profileOptions) broken() bool {
+	return options.byRepo || options.byHour || options.byWeekday
 }
 
 // changedAnyFormatFlag existe para recusar --format, --no-header, --output e
@@ -171,6 +200,37 @@ func printCommitCount(output io.Writer, count int, since string, until string) e
 	}
 
 	return err
+}
+
+// runLocalBreakdown imprime a contagem local quebrada por hora ou por dia da
+// semana. Herda o período do --commit-count inteiro, inclusive o padrão de
+// hoje: o recorte muda o eixo da resposta, nunca a pergunta.
+func runLocalBreakdown(command *cobra.Command, repo *profile.Repo, options profileOptions, chosen rendering, since string, until string) error {
+	ctx := command.Context()
+
+	identity, err := repo.Identity(ctx)
+	if err != nil {
+		return err
+	}
+	if identity == "" {
+		return fmt.Errorf("configure git config user.name ou user.email para usar o gtr profile")
+	}
+
+	if options.byHour {
+		hours, err := repo.CommitCountByHour(ctx, identity, since, until)
+		if err != nil {
+			return err
+		}
+
+		return emit(command.OutOrStdout(), options.output, "commits-por-hora", chosen, hourCountsTable{hours: hours})
+	}
+
+	weekdays, err := repo.CommitCountByWeekday(ctx, identity, since, until)
+	if err != nil {
+		return err
+	}
+
+	return emit(command.OutOrStdout(), options.output, "commits-por-dia-da-semana", chosen, weekdayCountsTable{weekdays: weekdays})
 }
 
 // runStreak conta os dias seguidos com commit. Sem --author, o sujeito é a
