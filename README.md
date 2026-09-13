@@ -882,12 +882,14 @@ Métricas sobre a **sua própria** identidade de git — diferente do
 | `--streak` | `false` | Métrica: quantos dias seguidos com commit — a sequência em curso e a maior do histórico |
 | `--account` | `false` | Conta em toda a conta do GitHub, não só neste repositório; **faz chamada de rede**. Só com `--commit-count` |
 | `--by-repo` | `false` | Quebra `--account` por repositório em vez de somar tudo; só vale com `--account` |
+| `--by-hour` | `false` | Quebra a contagem por hora do dia, no fuso desta máquina; só com `--commit-count`, e local |
+| `--by-weekday` | `false` | Quebra a contagem por dia da semana, da segunda ao domingo; só com `--commit-count`, e local |
 | `--author <quem>` | vazio | Só com `--streak`: a sequência desse autor, casando substring, em vez da sua |
 | `--since <data>` | hoje | Início do período, `AAAA-MM-DD`. Sem `--until`, vai até hoje. Só com `--commit-count` |
 | `--until <data>` | hoje | Fim do período, `AAAA-MM-DD`. Sem `--since`, começa hoje. Só com `--commit-count` |
-| `--format <f>` | `text` | Só com `--by-repo`: `text`, `csv`, `tsv` ou `json` |
-| `--no-header` | `false` | Só com `--by-repo --format csv` ou `tsv`: omite a linha de nomes das colunas |
-| `--output <caminho>` | vazio | Só com `--by-repo`: caminho do arquivo a gravar, em vez do `stdout` |
+| `--format <f>` | `text` | Só com uma das quebras: `text`, `csv`, `tsv` ou `json` |
+| `--no-header` | `false` | Só com uma das quebras, em `csv` ou `tsv`: omite a linha de nomes das colunas |
+| `--output <caminho>` | vazio | Só com uma das quebras: caminho do arquivo a gravar, em vez do `stdout` |
 
 Sem nenhuma das duas datas, o período é só hoje:
 
@@ -920,6 +922,53 @@ por baixo, `--since` vira `<data> 00:00:00` e `--until` vira
 `<data> 23:59:59`, sempre.
 
 **Por padrão é leitura local, sem rede** — só `git log` e `git config`.
+
+**`--by-hour` e `--by-weekday` quebram a contagem em outro eixo** — a que
+horas, ou em que dias da semana, os seus commits caem. São recortes **locais**
+do `--commit-count`, um por invocação:
+
+```
+$ gtr profile --commit-count --by-weekday --since 2026-08-01
+  DIA      COMMITS
+  segunda  20
+  terça    110
+  quarta   13
+  quinta   30
+  sexta    23
+  sábado   31
+  domingo  23
+```
+
+**Eles herdam o período do `--commit-count`, inclusive o padrão de hoje.** Sem
+`--since`, você está quebrando o dia de hoje por hora — resposta legítima, mas
+raramente a pergunta interessante. O recorte muda o eixo da resposta, nunca a
+pergunta; um padrão que mudasse de valor conforme outra flag estivesse ligada
+seria pior que a digitação a mais.
+
+**A hora e o dia são os do fuso desta máquina**, não os gravados por quem
+commitou — é o `--date=iso-strict-local`, e o `TZ` do ambiente vale. Toda hora
+sai na tabela, inclusive as zeradas: a forma da distribuição é a resposta, e
+hora ausente obrigaria quem lê a contar linha. A semana começa na **segunda**,
+porque a pergunta é sobre hábito de trabalho e o fim de semana diz mais junto,
+no fim, do que partido entre as duas pontas.
+
+**Os quatro formatos valem aqui**, porque agora existe tabela para formatar. E
+o que vai para a planilha não é o que vai para a tela: a hora sai crua no
+`csv` e no `json` — `22`, não `22h` —, porque é número que ordena e soma,
+mesma disciplina do `ui.Bytes`. Já o dia da semana sai pelo nome em todos os
+formatos: é rótulo, não grandeza, e `3` obrigaria quem abre o arquivo a saber
+onde a semana começa.
+
+```
+$ gtr profile --commit-count --by-hour --since 2026-09-01 --format csv
+hora,commits
+0,4
+1,3
+```
+
+**`--account` não aceita esses dois recortes.** A contagem da conta vem do
+`contributionsCollection`, que não traz hora nem dia da semana — a recusa é
+explícita, em vez de devolver tabela vazia.
 
 **`--streak` conta dias seguidos com commit** — a sequência que está em curso
 e a maior de todo o histórico. Sem período a escolher: `--since` e `--until`
