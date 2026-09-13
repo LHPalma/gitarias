@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -670,4 +671,50 @@ func equalStrings(got []string, want []string) bool {
 		}
 	}
 	return true
+}
+
+// TestAddPropagatesTheWriteFailure precisa de um caminho que a leitura
+// aceite e a escrita recuse — e essa é uma combinação estreita, porque o
+// Add lê antes de anexar: qualquer coisa que quebre o open quebra o
+// ReadFile primeiro, e o erro sairia da leitura, não da escrita.
+//
+// O symlink pendurado é o caso que separa os dois: o ReadFile segue o link
+// e toma "não existe", que o readLines trata como arquivo ausente; o open
+// com O_CREATE segue o mesmo link e falha, porque o diretório do alvo não
+// existe e o MkdirAll cuidou do diretório do link, não do destino dele.
+//
+// Symlink não é portátil para Windows sem privilégio, e o cenário é de
+// sistema de arquivos, não de regra de negócio — daí o skip em vez de uma
+// costura no código de produção.
+func TestAddPropagatesTheWriteFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink exige privilégio no Windows, e o que se testa aqui é propagação de erro, não o sistema de arquivos")
+	}
+
+	root := t.TempDir()
+	destination := filepath.Join(root, ".gitignore")
+
+	if err := os.Symlink(filepath.Join(root, "sem-diretorio", "alvo"), destination); err != nil {
+		t.Fatalf("não consegui montar o cenário: %v", err)
+	}
+
+	// A pré-condição é o que sustenta a asserção: a leitura tem de ver
+	// "não existe", senão o erro viria dela e o teste passaria de graça.
+	if _, err := os.ReadFile(destination); !os.IsNotExist(err) {
+		t.Fatalf("a pré-condição não está de pé: ReadFile devolveu %v, queria não-existe", err)
+	}
+
+	responses := merge(
+		map[string]gittest.Response{"rev-parse --show-toplevel": {Output: root}},
+		notCovered("build/"),
+		nothingMatches(),
+	)
+
+	result, err := NewRepo(gittest.NewRunner(responses)).Add(t.Context(), "build/", Repository, false)
+	if err == nil {
+		t.Fatal("falha ao anexar tem de virar erro, não resultado com Written")
+	}
+	if result.Written {
+		t.Errorf("resultado = %+v; nada foi escrito, o resultado não pode dizer que foi", result)
+	}
 }

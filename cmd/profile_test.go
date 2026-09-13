@@ -1037,3 +1037,16 @@ func TestProfileByWeekdayPropagatesTheLogFailure(t *testing.T) {
 		t.Fatal("falha do log tem de virar erro também no recorte por dia da semana")
 	}
 }
+
+func TestProfileByRepoPropagatesWhatTheGhComplained(t *testing.T) {
+	outcomes := []exectest.Response{{Result: exec.Result{Code: 1, Output: "gh: Bad credentials (HTTP 401)"}}}
+
+	result := executeWith(t, inARepository(), outcomes, "profile", "--commit-count", "--account", "--by-repo")
+
+	if result.err == nil {
+		t.Fatal("gh que roda e recusa tem de virar erro também no --by-repo")
+	}
+	if !strings.Contains(result.err.Error(), "401") {
+		t.Errorf("erro = %v, queria o que o gh disse", result.err)
+	}
+}

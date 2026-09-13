@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -545,5 +546,36 @@ func TestAITrailersStripStepAmendsTheHeadDirectly(t *testing.T) {
 	}
 	if !amended {
 		t.Errorf("chamadas = %v, o subcomando oculto tinha de rodar o amend", result.calls)
+	}
+}
+
+// TestAITrailersStripPropagatesTheWriteFailureOfEveryLine varre o número de
+// escritas liberadas antes do disco "encher": cada ponto de escrita do
+// preview — a tabela e a linha de recuperação — tem de subir o erro em vez
+// de seguir para a confirmação. Confirmar uma reescrita cujo preview não
+// chegou à tela seria pedir autorização às cegas.
+func TestAITrailersStripPropagatesTheWriteFailureOfEveryLine(t *testing.T) {
+	block := "Co-Authored-By: Claude <noreply@anthropic.com>\n"
+	raw := "feat: algo\n\n" + block
+
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		aiTrailersShortHead:               {Output: "abc123"},
+		aiTrailersHeadLog:                 {Output: "abc123\x00feat: algo\x00" + block},
+		aiTrailersStripLog:                {Output: raw + "\x00" + block + "\x00" + block},
+	}
+
+	for allowed := range 4 {
+		t.Run(strconv.Itoa(allowed), func(t *testing.T) {
+			command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
+			command.SetOut(&countingWriter{allowed: allowed})
+			command.SetErr(&bytes.Buffer{})
+			command.SetIn(strings.NewReader("y\n"))
+			command.SetArgs([]string{"ai-trailers", "strip"})
+
+			if command.Execute() == nil {
+				t.Fatalf("com %d escrita(s) liberada(s) o preview não sai inteiro, e o erro tem de subir", allowed)
+			}
+		})
 	}
 }

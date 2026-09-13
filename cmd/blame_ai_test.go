@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -210,5 +211,32 @@ func TestBlameAITakesNoArguments(t *testing.T) {
 
 	if result.err == nil {
 		t.Fatal("o blame-ai não recebe argumento posicional; argumento a mais tem de virar erro")
+	}
+}
+
+// TestBlameAIPropagatesTheWriteFailureOfEveryLine tem o mesmo papel do teste
+// homônimo do strip: preview que não chegou à tela não vira pedido de
+// confirmação.
+func TestBlameAIPropagatesTheWriteFailureOfEveryLine(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		aiTrailersShortHead:               {Output: "abc123"},
+		blameAIPlanLog("HEAD"):            {Output: "abc123\x00feat: algo"},
+		blameAIHeadLog:                    {Output: "feat: algo\n\nbody\n"},
+		blameAIInterpretTrailers:          {Output: "feat: algo\n\nbody\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"},
+	}
+
+	for allowed := range 2 {
+		t.Run(strconv.Itoa(allowed), func(t *testing.T) {
+			command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
+			command.SetOut(&countingWriter{allowed: allowed})
+			command.SetErr(&bytes.Buffer{})
+			command.SetIn(strings.NewReader("y\n"))
+			command.SetArgs([]string{"blame-ai", "--tool", "claude"})
+
+			if command.Execute() == nil {
+				t.Fatalf("com %d escrita(s) liberada(s) o preview não sai inteiro, e o erro tem de subir", allowed)
+			}
+		})
 	}
 }
