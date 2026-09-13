@@ -873,16 +873,18 @@ não é erro: `Nenhum commit encontrado.`
 ### `gtr profile`
 
 Métricas sobre a **sua própria** identidade de git — diferente do
-`gtr stats`, que conta todo mundo. Cada métrica é uma flag própria; hoje só
-existe uma:
+`gtr stats`, que conta todo mundo. Cada métrica é uma flag própria, uma delas
+é obrigatória, e elas não se combinam; hoje são duas:
 
 | Flag | Padrão | Efeito |
 |---|---|---|
-| `--commit-count` | `false` | A métrica: quantos commits seus caem no período. Obrigatória — sem ela, o comando recusa |
-| `--account` | `false` | Conta em toda a conta do GitHub, não só neste repositório; **faz chamada de rede** |
+| `--commit-count` | `false` | Métrica: quantos commits seus caem no período |
+| `--streak` | `false` | Métrica: quantos dias seguidos com commit — a sequência em curso e a maior do histórico |
+| `--account` | `false` | Conta em toda a conta do GitHub, não só neste repositório; **faz chamada de rede**. Só com `--commit-count` |
 | `--by-repo` | `false` | Quebra `--account` por repositório em vez de somar tudo; só vale com `--account` |
-| `--since <data>` | hoje | Início do período, `AAAA-MM-DD`. Sem `--until`, vai até hoje |
-| `--until <data>` | hoje | Fim do período, `AAAA-MM-DD`. Sem `--since`, começa hoje |
+| `--author <quem>` | vazio | Só com `--streak`: a sequência desse autor, casando substring, em vez da sua |
+| `--since <data>` | hoje | Início do período, `AAAA-MM-DD`. Sem `--until`, vai até hoje. Só com `--commit-count` |
+| `--until <data>` | hoje | Fim do período, `AAAA-MM-DD`. Sem `--since`, começa hoje. Só com `--commit-count` |
 | `--format <f>` | `text` | Só com `--by-repo`: `text`, `csv`, `tsv` ou `json` |
 | `--no-header` | `false` | Só com `--by-repo --format csv` ou `tsv`: omite a linha de nomes das colunas |
 | `--output <caminho>` | vazio | Só com `--by-repo`: caminho do arquivo a gravar, em vez do `stdout` |
@@ -905,9 +907,10 @@ $ gtr profile --commit-count --since 2026-08-15 --until 2026-08-16
 ```
 
 **A identidade é a que já está configurada no repositório** —
-`git config user.email`, ou `user.name` se só ele estiver — nunca uma flag
-`--author`: é o seu perfil, não o de qualquer um. Sem nenhum dos dois
-configurados, o erro manda configurar.
+`git config user.email`, ou `user.name` se só ele estiver. É o seu perfil, e
+o `--commit-count` não conta outra pessoa: para commits de um autor qualquer,
+o comando é o `gtr stats --author`. Sem nenhum dos dois configurados, o erro
+manda configurar.
 
 **As duas pontas do dia são explícitas por baixo, nunca a data nua.**
 `git log --since=2026-08-15` sozinho não vale meia-noite daquele dia — vale a
@@ -917,6 +920,58 @@ por baixo, `--since` vira `<data> 00:00:00` e `--until` vira
 `<data> 23:59:59`, sempre.
 
 **Por padrão é leitura local, sem rede** — só `git log` e `git config`.
+
+**`--streak` conta dias seguidos com commit** — a sequência que está em curso
+e a maior de todo o histórico. Sem período a escolher: `--since` e `--until`
+são recusadas, porque a pergunta olha o histórico inteiro.
+
+```
+$ gtr profile --streak
+Sequência atual: 44 dias, de 2026-08-01 a 2026-09-13.
+Maior sequência: 61 dias, de 2026-03-02 a 2026-05-01.
+```
+
+**A sequência atravessa mês e ano.** 31 de agosto e 1º de setembro são dias
+consecutivos como quaisquer outros — o tamanho do mês não entra na conta, e
+uma sequência que começa em agosto e chega a setembro é uma só, não duas.
+
+**O dia que ainda está correndo não quebra a sequência.** Sem commit hoje ela
+vale até ontem, e a frase lembra o que falta — só quebra quando ontem também
+não teve:
+
+```
+$ gtr profile --streak
+Sequência atual: 43 dias, de 2026-08-01 a 2026-09-12 — ainda sem commit hoje.
+Maior sequência: 61 dias, de 2026-03-02 a 2026-05-01.
+```
+
+Sem sequência viva, a linha nomeia o último dia com commit em vez de dizer só
+"nenhuma":
+
+```
+$ gtr profile --streak
+Sequência atual: nenhuma — o último commit foi em 2026-08-30.
+Maior sequência: 61 dias, de 2026-03-02 a 2026-05-01.
+```
+
+**O dia é o da autoria, no fuso de quem roda** — `%ad` com
+`--date=short-local`. É o dia que você viveu, e é o que sobrevive a um
+rebase, que preserva a data de autoria e reescreve a de commit. Vários
+commits no mesmo dia contam um dia só, commit datado no futuro não abre
+sequência, e empate na maior fica com a mais recente.
+
+**`--author` conta a sequência de outra pessoa**, casando substring como o
+`--author` do próprio `git log`. É a única métrica do comando que aceita
+outro sujeito — sem ela, é a sua identidade:
+
+```
+$ gtr profile --streak --author natalia@teste.com
+Sequência atual: nenhuma — o último commit foi em 2026-09-10.
+Maior sequência: 4 dias, de 2026-09-07 a 2026-09-10.
+```
+
+Repositório sem nenhum commit — ou autor sem nenhum — não é erro:
+`Nenhum commit encontrado.`
 
 **Com `--account`, conta em toda a conta do GitHub, não só neste
 repositório.** Sai da máquina, pelo `gh` — a soma vem de
