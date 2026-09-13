@@ -3,6 +3,7 @@ package profile
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/LHPalma/gitarias/internal/git/gittest"
 )
@@ -26,5 +27,8 @@ func TestProfileOperationsCarryTheCancellation(t *testing.T) {
 	}
 	if _, err := repo.CommitCount(ctx, "real@real.com", "2026-08-15", "2026-08-15"); err == nil {
 		t.Error("CommitCount tem de recusar o contexto cancelado")
+	}
+	if _, err := repo.Streaks(ctx, "real@real.com", time.Now()); err == nil {
+		t.Error("Streaks tem de recusar o contexto cancelado")
 	}
 }

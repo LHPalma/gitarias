@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LHPalma/gitarias/internal/git"
 )
@@ -121,4 +123,140 @@ func (repo *Repo) empty(ctx context.Context) (bool, error) {
 	}
 
 	return false, err
+}
+
+const dayLayout = "2006-01-02"
+
+// Streaks apura as sequências de dias com commit de author no HEAD atual: a
+// que está em curso e a maior de todo o histórico. author casa por
+// substring, como o --author do próprio git log. today é o dia de
+// referência da sequência em curso e vem de quem chama, porque o domínio não
+// lê o relógio — só a data dele conta, a hora é descartada.
+//
+// A sequência em curso não quebra no dia que ainda está correndo: sem commit
+// hoje, ela termina ontem e continua valendo; quebra quando ontem também não
+// teve. Repositório sem nenhum commit, ou autor sem nenhum, devolve as duas
+// sequências vazias e Last sem valor, não erro.
+//
+// O dia é o da autoria (%ad) no fuso de quem roda (--date=short-local): é o
+// dia que a pessoa viveu, e é o que sobrevive a um rebase, que preserva a
+// data de autoria e reescreve a de commit.
+func (repo *Repo) Streaks(ctx context.Context, author string, today time.Time) (StreakReport, error) {
+	empty, err := repo.empty(ctx)
+	if err != nil {
+		return StreakReport{}, err
+	}
+	if empty {
+		return StreakReport{}, nil
+	}
+
+	output, err := repo.runner.Run(ctx, "log", "--format=%ad", "--date=short-local", "--author="+author)
+	if err != nil {
+		return StreakReport{}, err
+	}
+
+	days, err := parseDays(output)
+	if err != nil {
+		return StreakReport{}, err
+	}
+	if len(days) == 0 {
+		return StreakReport{}, nil
+	}
+
+	return StreakReport{Current: current(days, civil(today)), Longest: longest(days), Last: days[0]}, nil
+}
+
+// parseDays lê a saída do log em dias distintos, do mais novo para o mais
+// velho. A ordenação não é redundante: o git log ordena por data de commit, e
+// a de autoria pode vir fora de ordem — rebase, cherry-pick e amend deslocam
+// uma sem a outra.
+func parseDays(output string) ([]time.Time, error) {
+	seen := map[string]bool{}
+	days := []time.Time{}
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || seen[line] {
+			continue
+		}
+		seen[line] = true
+
+		day, err := time.Parse(dayLayout, line)
+		if err != nil {
+			return nil, fmt.Errorf("git log devolveu uma data ilegível: %q", line)
+		}
+
+		days = append(days, day)
+	}
+
+	sort.Slice(days, func(first int, second int) bool { return days[first].After(days[second]) })
+
+	return days, nil
+}
+
+// civil reduz um instante ao dia dele, representado à meia-noite UTC. Toda a
+// aritmética de dia acontece nessa representação para que somar ou subtrair
+// um dia não caia num horário que não existe: onde o horário de verão entra à
+// meia-noite, o dia anterior de uma meia-noite local não é meia-noite.
+func civil(moment time.Time) time.Time {
+	year, month, day := moment.Date()
+
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+}
+
+// current devolve a sequência que chega a today ou a ontem, e vazia quando
+// nenhum dos dois teve commit. days vem sem repetição, do mais novo para o
+// mais velho. Dia datado no futuro é pulado em vez de abrir sequência:
+// relógio adiantado de quem commitou não inventa constância.
+func current(days []time.Time, today time.Time) Streak {
+	yesterday := today.AddDate(0, 0, -1)
+
+	for index, day := range days {
+		if day.After(today) {
+			continue
+		}
+		if day.Before(yesterday) {
+			return Streak{}
+		}
+
+		return runEndingAt(days, index)
+	}
+
+	return Streak{}
+}
+
+// longest devolve a maior sequência do histórico, a mais recente em caso de
+// empate. Índice que cai no meio de uma sequência já contada é pulado, então
+// cada dia é visitado no máximo duas vezes.
+func longest(days []time.Time) Streak {
+	var best Streak
+
+	for index, day := range days {
+		if index > 0 && days[index-1].Equal(day.AddDate(0, 0, 1)) {
+			continue
+		}
+
+		if run := runEndingAt(days, index); run.Days > best.Days {
+			best = run
+		}
+	}
+
+	return best
+}
+
+// runEndingAt estende para trás a sequência que termina em days[index],
+// enquanto os dias forem consecutivos.
+func runEndingAt(days []time.Time, index int) Streak {
+	streak := Streak{Days: 1, Start: days[index], End: days[index]}
+
+	for next := index + 1; next < len(days); next++ {
+		if !days[next].Equal(streak.Start.AddDate(0, 0, -1)) {
+			break
+		}
+
+		streak.Start = days[next]
+		streak.Days++
+	}
+
+	return streak
 }
