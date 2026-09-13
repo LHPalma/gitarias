@@ -260,3 +260,98 @@ func runEndingAt(days []time.Time, index int) Streak {
 
 	return streak
 }
+
+// weekdayOrder é a ordem em que a semana sai: começa na segunda e termina no
+// domingo, porque a pergunta é sobre hábito de trabalho e o fim de semana diz
+// mais no fim da tabela do que partido entre as pontas. time.Weekday começa
+// no domingo, então a ordem é explícita e não a do enum.
+var weekdayOrder = []time.Weekday{
+	time.Monday, time.Tuesday, time.Wednesday, time.Thursday,
+	time.Friday, time.Saturday, time.Sunday,
+}
+
+const hoursInDay = 24
+
+// CommitCountByHour quebra por hora do dia a mesma contagem do CommitCount —
+// mesma identidade, mesmo período, mesmos limites explícitos. Devolve as 24
+// horas sempre, inclusive as de contagem zero: a forma da distribuição é a
+// resposta, e hora ausente da tabela deixaria quem lê contando linha.
+func (repo *Repo) CommitCountByHour(ctx context.Context, identity string, since string, until string) ([]HourCount, error) {
+	moments, err := repo.moments(ctx, identity, since, until)
+	if err != nil {
+		return nil, err
+	}
+
+	counts := make([]HourCount, hoursInDay)
+	for hour := range counts {
+		counts[hour] = HourCount{Hour: hour}
+	}
+	for _, moment := range moments {
+		counts[moment.Hour()].Commits++
+	}
+
+	return counts, nil
+}
+
+// CommitCountByWeekday quebra a mesma contagem por dia da semana, da segunda
+// ao domingo. Como o CommitCountByHour, devolve os sete dias sempre.
+func (repo *Repo) CommitCountByWeekday(ctx context.Context, identity string, since string, until string) ([]WeekdayCount, error) {
+	moments, err := repo.moments(ctx, identity, since, until)
+	if err != nil {
+		return nil, err
+	}
+
+	commits := map[time.Weekday]int{}
+	for _, moment := range moments {
+		commits[moment.Weekday()]++
+	}
+
+	counts := make([]WeekdayCount, 0, len(weekdayOrder))
+	for _, weekday := range weekdayOrder {
+		counts = append(counts, WeekdayCount{Weekday: weekday, Commits: commits[weekday]})
+	}
+
+	return counts, nil
+}
+
+// moments devolve o instante de autoria de cada commit da identidade no
+// período, já convertido para o fuso de quem roda pelo próprio git. O
+// --date=iso-strict-local é RFC 3339 exato — medido contra o git antes de
+// escolher —, então a stdlib parseia com a constante dela e o deslocamento
+// vem embutido: a hora e o dia da semana lidos daqui já são os locais, sem
+// segunda conversão.
+//
+// Repositório sem nenhum commit devolve lista vazia, não erro, como o
+// CommitCount devolve zero.
+func (repo *Repo) moments(ctx context.Context, identity string, since string, until string) ([]time.Time, error) {
+	empty, err := repo.empty(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if empty {
+		return nil, nil
+	}
+
+	output, err := repo.runner.Run(ctx, "log", "--format=%ad", "--date=iso-strict-local",
+		"--author="+identity, "--since="+since+" 00:00:00", "--until="+until+" 23:59:59")
+	if err != nil {
+		return nil, err
+	}
+
+	moments := []time.Time{}
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		moment, err := time.Parse(time.RFC3339, line)
+		if err != nil {
+			return nil, fmt.Errorf("git log devolveu um instante ilegível: %q", line)
+		}
+
+		moments = append(moments, moment)
+	}
+
+	return moments, nil
+}

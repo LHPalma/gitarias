@@ -31,4 +31,10 @@ func TestProfileOperationsCarryTheCancellation(t *testing.T) {
 	if _, err := repo.Streaks(ctx, "real@real.com", time.Now()); err == nil {
 		t.Error("Streaks tem de recusar o contexto cancelado")
 	}
+	if _, err := repo.CommitCountByHour(ctx, "real@real.com", "2026-09-01", "2026-09-13"); err == nil {
+		t.Error("CommitCountByHour tem de recusar o contexto cancelado")
+	}
+	if _, err := repo.CommitCountByWeekday(ctx, "real@real.com", "2026-09-01", "2026-09-13"); err == nil {
+		t.Error("CommitCountByWeekday tem de recusar o contexto cancelado")
+	}
 }
