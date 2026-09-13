@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -124,7 +125,7 @@ func TestProfileRequiresTheMetricFlag(t *testing.T) {
 	result := execute(t, profiled(), "", "profile")
 
 	if result.err == nil {
-		t.Fatal("sem --commit-count tem de recusar, ainda não há outra métrica")
+		t.Fatal("sem nenhuma métrica tem de recusar: --commit-count ou --streak, uma delas")
 	}
 	if len(result.calls) != 0 {
 		t.Errorf("chamadas = %v, a validação vem antes de tocar no git", result.calls)
@@ -599,5 +600,216 @@ func TestProfileByRepoNeverEndsALineWithSpace(t *testing.T) {
 		if strings.HasSuffix(line, " ") {
 			t.Errorf("RN-10: a linha %d termina em espaço: %q", number+1, line)
 		}
+	}
+}
+
+func profileStreakCall(author string) string {
+	return "log --format=%ad --date=short-local --author=" + author
+}
+
+func profileDaysAgo(days int) string {
+	return time.Now().AddDate(0, 0, -days).Format("2006-01-02")
+}
+
+// streaked roteiriza o repositório com HEAD apontando para algum commit e o
+// log devolvendo os dias pedidos, do mais novo para o mais velho.
+func streaked(days ...string) map[string]gittest.Response {
+	responses := profiled()
+	responses["rev-parse --verify --quiet HEAD"] = gittest.Response{Output: "abc123"}
+	responses[profileStreakCall("real@real.com")] = gittest.Response{Output: strings.Join(days, "\n") + "\n"}
+
+	return responses
+}
+
+func TestProfileStreakCountsTheDaysInARow(t *testing.T) {
+	result := execute(t, streaked(profileDaysAgo(0), profileDaysAgo(1), profileDaysAgo(2)), "", "profile", "--streak")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+
+	wanted := "Sequência atual: 3 dias, de " + profileDaysAgo(2) + " a " + profileDaysAgo(0) + ".\n" +
+		"Maior sequência: 3 dias, de " + profileDaysAgo(2) + " a " + profileDaysAgo(0) + ".\n"
+	if result.stdout != wanted {
+		t.Errorf("saída = %q, queria %q", result.stdout, wanted)
+	}
+}
+
+func TestProfileStreakSaysWhenTodayIsStillMissing(t *testing.T) {
+	result := execute(t, streaked(profileDaysAgo(1), profileDaysAgo(2)), "", "profile", "--streak")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if !strings.Contains(result.stdout, "ainda sem commit hoje") {
+		t.Errorf("saída = %q; a sequência vale até ontem, e a frase tem de lembrar que falta commitar", result.stdout)
+	}
+}
+
+func TestProfileStreakWithASingleDay(t *testing.T) {
+	result := execute(t, streaked(profileDaysAgo(0)), "", "profile", "--streak")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	if result.stdout != "Sequência atual: 1 dia, em "+profileDaysAgo(0)+".\nMaior sequência: 1 dia, em "+profileDaysAgo(0)+".\n" {
+		t.Errorf("saída = %q; um dia só não repete a data nem escreve \"dias\"", result.stdout)
+	}
+}
+
+func TestProfileStreakWithoutACurrentOne(t *testing.T) {
+	result := execute(t, streaked("2026-01-02", "2026-01-01"), "", "profile", "--streak")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+
+	wanted := "Sequência atual: nenhuma — o último commit foi em 2026-01-02.\n" +
+		"Maior sequência: 2 dias, de 2026-01-01 a 2026-01-02.\n"
+	if result.stdout != wanted {
+		t.Errorf("saída = %q, queria %q", result.stdout, wanted)
+	}
+}
+
+func TestProfileStreakWithoutAnyCommit(t *testing.T) {
+	responses := profiled()
+	responses["rev-parse --verify --quiet HEAD"] = gittest.Response{Err: &git.ExitError{Code: 1, Message: ""}}
+
+	result := execute(t, responses, "", "profile", "--streak")
+
+	if result.err != nil {
+		t.Fatalf("repositório sem commit não é erro, veio %v", result.err)
+	}
+	if result.stdout != "Nenhum commit encontrado.\n" {
+		t.Errorf("saída = %q", result.stdout)
+	}
+}
+
+func TestProfileStreakCountsTheAuthorAsked(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree":      {Output: "true"},
+		"rev-parse --verify --quiet HEAD":      {Output: "abc123"},
+		profileStreakCall("natalia@teste.com"): {Output: profileDaysAgo(0) + "\n"},
+	}
+
+	result := execute(t, responses, "", "profile", "--streak", "--author", "natalia@teste.com")
+
+	if result.err != nil {
+		t.Fatalf("não esperava erro, veio %v", result.err)
+	}
+	for _, call := range result.calls {
+		if strings.HasPrefix(call, "config --get user.") {
+			t.Errorf("chamadas = %v; com --author a identidade local não é o sujeito, e nem chega a ser lida", result.calls)
+		}
+	}
+}
+
+func TestProfileStreakErrorsWithoutAnyIdentityConfigured(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		profileUserEmail:                  {Err: &git.ExitError{Code: 1, Message: ""}},
+		profileUserName:                   {Err: &git.ExitError{Code: 1, Message: ""}},
+	}
+
+	result := execute(t, responses, "", "profile", "--streak")
+
+	if result.err == nil {
+		t.Fatal("sem identidade configurada e sem --author tem de virar erro")
+	}
+}
+
+func TestProfileStreakPropagatesTheIdentityFailure(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Output: "true"},
+		profileUserEmail:                  {Err: errNotARepository},
+	}
+
+	result := execute(t, responses, "", "profile", "--streak")
+
+	if result.err == nil {
+		t.Fatal("falha real ao ler a identidade tem de virar erro")
+	}
+}
+
+func TestProfileStreakPropagatesTheLogFailure(t *testing.T) {
+	responses := profiled()
+	responses["rev-parse --verify --quiet HEAD"] = gittest.Response{Output: "abc123"}
+	responses[profileStreakCall("real@real.com")] = gittest.Response{Err: errNotARepository}
+
+	result := execute(t, responses, "", "profile", "--streak")
+
+	if result.err == nil {
+		t.Fatal("falha do log tem de virar erro")
+	}
+}
+
+func TestProfileStreakOutsideRepository(t *testing.T) {
+	responses := map[string]gittest.Response{
+		"rev-parse --is-inside-work-tree": {Err: errNotARepository},
+	}
+
+	result := execute(t, responses, "", "profile", "--streak")
+
+	if result.err == nil {
+		t.Fatal("esperava erro, veio nil")
+	}
+	if !strings.Contains(result.err.Error(), "não é um repositório git") {
+		t.Fatalf("erro = %v, queria o do Ensure e não o de outra etapa", result.err)
+	}
+}
+
+func TestProfileRefusesTheFlagsOfTheOtherMetric(t *testing.T) {
+	tests := [][]string{
+		{"profile"},
+		{"profile", "--streak", "--commit-count"},
+		{"profile", "--streak", "--account"},
+		{"profile", "--streak", "--since", "2026-09-01"},
+		{"profile", "--streak", "--until", "2026-09-01"},
+		{"profile", "--streak", "--format", "json"},
+		{"profile", "--commit-count", "--author", "natalia"},
+	}
+
+	for _, args := range tests {
+		t.Run(strings.Join(args[1:], " "), func(t *testing.T) {
+			result := execute(t, profiled(), "", args...)
+
+			if result.err == nil {
+				t.Fatalf("%v tem de recusar; flag descartada calada é o pior modo de falha", args)
+			}
+			if len(result.calls) != 0 {
+				t.Errorf("chamadas = %v, a validação vem antes de tocar no git", result.calls)
+			}
+		})
+	}
+}
+
+func TestProfileStreakPropagatesTheWriteFailureOfEveryLine(t *testing.T) {
+	for allowed := range 2 {
+		t.Run(strconv.Itoa(allowed), func(t *testing.T) {
+			runner := gittest.NewRunner(streaked(profileDaysAgo(0), profileDaysAgo(1)))
+
+			command := NewRootCommand(runner, noCommands(), noWeb(), noFinder(), noNotices)
+			command.SetOut(&countingWriter{allowed: allowed})
+			command.SetErr(&bytes.Buffer{})
+			command.SetArgs([]string{"profile", "--streak"})
+
+			if command.Execute() == nil {
+				t.Fatalf("com %d escrita(s) liberada(s) o resto falha e o erro tem de subir", allowed)
+			}
+		})
+	}
+}
+
+func TestProfileStreakPropagatesTheWriteFailureWithoutAnyCommit(t *testing.T) {
+	responses := profiled()
+	responses["rev-parse --verify --quiet HEAD"] = gittest.Response{Err: &git.ExitError{Code: 1, Message: ""}}
+
+	command := NewRootCommand(gittest.NewRunner(responses), noCommands(), noWeb(), noFinder(), noNotices)
+	command.SetOut(brokenWriter{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"profile", "--streak"})
+
+	if command.Execute() == nil {
+		t.Fatal("falha de escrita tem de virar erro")
 	}
 }

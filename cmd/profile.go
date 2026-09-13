@@ -17,8 +17,10 @@ import (
 type profileOptions struct {
 	formatOptions
 	commitCount bool
+	streak      bool
 	account     bool
 	byRepo      bool
+	author      string
 	since       string
 	until       string
 }
@@ -31,6 +33,8 @@ func newProfileCommand(runner Runner, commands exec.Runner) *cobra.Command {
 		Short: "Métricas sobre a sua identidade de git",
 		Long: "Métricas sobre a sua identidade de git. Por padrão, local: só o que este\n" +
 			"repositório viu, sem sair da máquina.\n\n" +
+			"--commit-count conta commits no período; --streak conta dias seguidos com\n" +
+			"commit, a sequência em curso e a maior do histórico. Uma por vez.\n\n" +
 			"Com --account, --commit-count conta em toda a conta do GitHub, não só\n" +
 			"aqui — FAZ CHAMADA DE REDE, pelo gh. A soma vale o que o token consegue\n" +
 			"ler: sem o escopo read:user, contribuições de repositório privado ficam\n" +
@@ -44,7 +48,11 @@ func newProfileCommand(runner Runner, commands exec.Runner) *cobra.Command {
 		},
 	}
 
-	command.Flags().BoolVar(&options.commitCount, "commit-count", false, "quantos commits seus caem no período (obrigatória: é a métrica)")
+	command.Flags().BoolVar(&options.commitCount, "commit-count", false, "quantos commits seus caem no período (uma métrica é obrigatória)")
+	command.Flags().BoolVar(&options.streak, "streak", false,
+		"quantos dias seguidos com commit: a sequência em curso e a maior do histórico (uma métrica é obrigatória)")
+	command.Flags().StringVar(&options.author, "author", "",
+		"conta por este autor em vez da sua identidade, casando substring; só vale com --streak")
 	command.Flags().BoolVar(&options.account, "account", false,
 		"conta em toda a conta do GitHub, não só neste repositório; FAZ CHAMADA DE REDE")
 	command.Flags().BoolVar(&options.byRepo, "by-repo", false,
@@ -58,14 +66,8 @@ func newProfileCommand(runner Runner, commands exec.Runner) *cobra.Command {
 }
 
 func runProfile(command *cobra.Command, repo *profile.Repo, source forge.Source, options profileOptions) error {
-	if !options.commitCount {
-		return fmt.Errorf("escolha uma métrica: --commit-count")
-	}
-	if options.byRepo && !options.account {
-		return fmt.Errorf("--by-repo só vale com --account")
-	}
-	if !options.byRepo && changedAnyFormatFlag(command) {
-		return fmt.Errorf("--format, --no-header, --output e --separator só valem com --by-repo")
+	if err := checkProfileFlags(command, options); err != nil {
+		return err
 	}
 
 	var chosen rendering
@@ -86,6 +88,10 @@ func runProfile(command *cobra.Command, repo *profile.Repo, source forge.Source,
 
 	if err := repo.Ensure(ctx); err != nil {
 		return err
+	}
+
+	if options.streak {
+		return runStreak(command, repo, options)
 	}
 
 	if options.account {
@@ -112,6 +118,36 @@ func runProfile(command *cobra.Command, repo *profile.Repo, source forge.Source,
 	return printCommitCount(command.OutOrStdout(), count, since, until)
 }
 
+// checkProfileFlags recusa toda combinação que não existe antes de qualquer
+// chamada ao git — métrica ausente, as duas métricas juntas, e cada flag
+// pedida fora da métrica que a usa. Flag setada de propósito e descartada
+// calada é o pior modo de falha.
+func checkProfileFlags(command *cobra.Command, options profileOptions) error {
+	if !options.commitCount && !options.streak {
+		return fmt.Errorf("escolha uma métrica: --commit-count ou --streak")
+	}
+	if options.commitCount && options.streak {
+		return fmt.Errorf("escolha uma métrica só: --commit-count ou --streak")
+	}
+	if options.byRepo && !options.account {
+		return fmt.Errorf("--by-repo só vale com --account")
+	}
+	if !options.byRepo && changedAnyFormatFlag(command) {
+		return fmt.Errorf("--format, --no-header, --output e --separator só valem com --by-repo")
+	}
+	if options.streak && options.account {
+		return fmt.Errorf("--account só vale com --commit-count")
+	}
+	if options.streak && (command.Flags().Changed("since") || command.Flags().Changed("until")) {
+		return fmt.Errorf("--since e --until só valem com --commit-count; a sequência olha o histórico inteiro")
+	}
+	if command.Flags().Changed("author") && !options.streak {
+		return fmt.Errorf("--author só vale com --streak")
+	}
+
+	return nil
+}
+
 // changedAnyFormatFlag existe para recusar --format, --no-header, --output e
 // --separator fora de --by-repo em vez de descartá-los calados: --commit-count
 // sozinho e --account sozinho imprimem uma linha só, e não há tabela para
@@ -135,6 +171,90 @@ func printCommitCount(output io.Writer, count int, since string, until string) e
 	}
 
 	return err
+}
+
+// runStreak conta os dias seguidos com commit. Sem --author, o sujeito é a
+// identidade configurada, como em toda métrica deste comando; com ela, é
+// quem foi pedido — e aí a identidade local nem chega a ser lida, porque não
+// é dela que se está falando.
+//
+// O relógio é lido uma vez só: duas leituras separadas podem cair em dias
+// diferentes se a chamada atravessar a meia-noite, e a sequência passaria a
+// ser apurada contra um dia e descrita contra outro.
+func runStreak(command *cobra.Command, repo *profile.Repo, options profileOptions) error {
+	ctx := command.Context()
+
+	author := options.author
+	if author == "" {
+		identity, err := repo.Identity(ctx)
+		if err != nil {
+			return err
+		}
+		if identity == "" {
+			return fmt.Errorf("configure git config user.name ou user.email para usar o gtr profile")
+		}
+
+		author = identity
+	}
+
+	now := time.Now()
+
+	report, err := repo.Streaks(ctx, author, now)
+	if err != nil {
+		return err
+	}
+
+	return printStreaks(command.OutOrStdout(), report, now)
+}
+
+func printStreaks(output io.Writer, report profile.StreakReport, now time.Time) error {
+	if report.Longest.Days == 0 {
+		_, err := fmt.Fprintln(output, "Nenhum commit encontrado.")
+
+		return err
+	}
+
+	if err := printCurrentStreak(output, report, now); err != nil {
+		return err
+	}
+
+	_, err := fmt.Fprintf(output, "Maior sequência: %s.\n", describeStreak(report.Longest))
+
+	return err
+}
+
+// printCurrentStreak nomeia o dia sem commit em vez de deixar a sequência
+// parecer interrompida: ela termina ontem enquanto hoje ainda está correndo,
+// e é justamente aí que a frase precisa lembrar que falta commitar.
+func printCurrentStreak(output io.Writer, report profile.StreakReport, now time.Time) error {
+	if report.Current.Days == 0 {
+		_, err := fmt.Fprintf(output, "Sequência atual: nenhuma — o último commit foi em %s.\n",
+			report.Last.Format(dateLayout))
+
+		return err
+	}
+
+	if report.Current.End.Format(dateLayout) == now.Format(dateLayout) {
+		_, err := fmt.Fprintf(output, "Sequência atual: %s.\n", describeStreak(report.Current))
+
+		return err
+	}
+
+	_, err := fmt.Fprintf(output, "Sequência atual: %s — ainda sem commit hoje.\n", describeStreak(report.Current))
+
+	return err
+}
+
+// describeStreak descreve uma sequência sem repetir a data quando ela dura
+// um dia só: "1 dia, de X a X" diz duas vezes o que "1 dia, em X" diz uma.
+func describeStreak(streak profile.Streak) string {
+	days := fmt.Sprintf("%d %s", streak.Days, ui.Plural(streak.Days, "dia", "dias"))
+
+	if streak.Days == 1 {
+		return days + ", em " + streak.Start.Format(dateLayout)
+	}
+
+	return days + ", de " + streak.Start.Format(dateLayout) + " a " + streak.End.Format(dateLayout)
 }
 
 // runAccountCommitCount conta pela conta inteira no GitHub, e não pelo git
