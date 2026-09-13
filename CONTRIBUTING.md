@@ -88,13 +88,17 @@ O papel é o mesmo do `@DisplayName` de JUnit: o identificador é código, a des
 
 Exceção: o **mutante equivalente** — mutação semanticamente idêntica ao original, que nenhum teste externo pode distinguir. Não deve ser "fechado" com asserção artificial; deve ser registrado na especificação da feature.
 
-**A barra é 100%, e o repositório está em 99,2%** — medido com `go test ./... -coverpkg=./...`, que é o número que conta, porque a cobertura de um pacote vem em boa parte dos testes de quem o usa. O que falta está nomeado nas especificações de cada feature, e cai em três categorias:
+**A barra é 100%, e o repositório está em 99,5%** — medido com `go test ./... -coverpkg=./...`, que é o número que conta, porque a cobertura de um pacote vem em boa parte dos testes de quem o usa. **Cuidado com a ferramenta:** com `-coverpkg`, o mesmo bloco aparece uma vez por pacote de teste, e o `go tool cover -func` pode relatar 0% para código que outro pacote executa. Some as ocorrências antes de acreditar que um trecho está morto.
 
-| Categoria | Exemplos | O que fazer |
+O que falta cai em três categorias, e **hoje não sobrou nenhuma lacuna de verdade** — as quinze linhas descobertas são todas fronteira ou estrutura, mais um mutante equivalente:
+
+| Categoria | Onde está hoje | O que fazer |
 |---|---|---|
-| **Fronteira** | `main.main`, o `run` do `git.CommandRunner` | Nada. É onde o processo toca o mundo, e a regra do projeto já os isenta |
-| **Estrutural** | `doctor.ScratchVariable`, que tem um ramo por sistema operacional | Nada. Cobrir exigiria injetar o sistema numa função de duas linhas — costura de teste no código de produção |
-| **Lacuna de verdade** | `ui.DescribeSection`, em 30,8% | Fechar. Um `switch` de doze ramos sem teste direto deixa passar troca de rótulo entre casos |
+| **Fronteira** | `main.main`; o `run` do `git.CommandRunner`, que exige um git de verdade falhando; e as duas chamadas da TUI que moram atrás de `isTerminal` — `resolveSelector` e `runInteractiveHelp` | Nada. É onde o processo toca o mundo, e a regra do projeto já os isenta. Cobrir as duas da TUI exigiria um pty de verdade, que só existiria no Linux e faria o número variar por plataforma |
+| **Estrutural** | `doctor.ScratchVariable` e o `home` do `ignore.defaultGlobalExcludesPath`, que têm ramo alcançável só noutro sistema operacional; o `filepath.Abs` do `findWorktree`, que só falha com o diretório corrente do processo apagado; o `RegisterFlagCompletionFunc` do `ignore list`, que só erra se a flag não existir; e a falha de `Stat`/`ReadAt` dentro do `appendLine` | Nada. Cobrir exigiria injetar o sistema, o relógio ou o abridor de arquivo numa função de poucas linhas — costura de teste no código de produção |
+| **Lacuna de verdade** | Nenhuma no momento | Fechar assim que aparecer. O último caso foi o `ui.DescribeSection`, que ficou em 30,8% por tempo demais: um `switch` de doze ramos sem teste direto deixa passar troca de rótulo entre casos, e nenhum teste de quem o usa pegaria — o changelog continuaria bem formado, com a seção errada |
+
+**A TUI não é fronteira, e descobrir isso rendeu cinco testes.** O `tea.NewProgram` roda com `io.Reader` e `io.Writer` comuns, sem terminal — `BranchSelector.Select` e `HelpMenu.Run` se dirigem com entrada canalizada, e é assim que se afirma de ponta a ponta que a lista começa toda marcada. **Uma armadilha medida:** byte sobrando na entrada depois da tecla que encerra deixa uma leitura pendente e o teste **trava** em vez de falhar. A entrada de cada teste traz exatamente as teclas que encerram o programa, e nem uma a mais.
 
 **Não há portão de cobertura no CI**, de propósito: um número no pipeline vira meta, e meta de cobertura se cumpre com teste que executa sem afirmar. A disciplina é a mutação, e ela não se automatiza.
 
