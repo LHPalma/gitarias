@@ -43,7 +43,7 @@ func layerNamed(t *testing.T, layers []Layer, name string) Layer {
 }
 
 func TestTreeInfersTheImmediateParent(t *testing.T) {
-	layers, err := NewRepo(gittest.NewRunner(stacked())).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(stacked())).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -67,7 +67,7 @@ func TestTreeInfersTheImmediateParent(t *testing.T) {
 }
 
 func TestTreePicksTheNearestAncestorAndNotJustAnyOne(t *testing.T) {
-	layers, err := NewRepo(gittest.NewRunner(stacked())).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(stacked())).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -79,7 +79,7 @@ func TestTreePicksTheNearestAncestorAndNotJustAnyOne(t *testing.T) {
 }
 
 func TestTreeLeavesTheBaseOut(t *testing.T) {
-	layers, err := NewRepo(gittest.NewRunner(stacked())).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(stacked())).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -96,7 +96,7 @@ func TestTreeReportsWhatIsMergedAndWhatIsNot(t *testing.T) {
 	responses := stacked()
 	responses["for-each-ref refs/heads/ --merged main --format=%(refname:short)"] = gittest.Response{Output: "main\ncamada-1"}
 
-	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -114,7 +114,7 @@ func TestTreeCarriesTheKindOfMerge(t *testing.T) {
 	responses := stacked()
 	responses["cherry main probe-camada-1"] = gittest.Response{Output: "- probe-camada-1"}
 
-	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -133,7 +133,7 @@ func TestTreeWithNothingBesidesTheBase(t *testing.T) {
 	responses := listings("main", "main", "main", "main")
 	responses["for-each-ref refs/heads/ --format=%(objectname) %(refname:short)"] = gittest.Response{Output: "aaa main"}
 
-	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -147,7 +147,7 @@ func TestTreePropagatesTheListingFailure(t *testing.T) {
 	responses := stacked()
 	responses["for-each-ref refs/heads/ --merged main --format=%(refname:short)"] = gittest.Response{Err: errors.New("fatal")}
 
-	if _, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}); err == nil {
+	if _, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}, nil); err == nil {
 		t.Fatal("falha do git tem de virar erro")
 	}
 }
@@ -156,7 +156,7 @@ func TestTreePropagatesTheTipsFailure(t *testing.T) {
 	responses := stacked()
 	delete(responses, "for-each-ref refs/heads/ --format=%(objectname) %(refname:short)")
 
-	if _, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}); err == nil {
+	if _, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}, nil); err == nil {
 		t.Fatal("sem as pontas nao ha como inferir pai nenhum")
 	}
 }
@@ -165,7 +165,7 @@ func TestTreeFallsBackToTheBaseWhenRevListFails(t *testing.T) {
 	responses := stacked()
 	delete(responses, "rev-list camada-2 ^main")
 
-	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("uma branch sem historico legivel nao derruba a arvore, veio %v", err)
@@ -181,7 +181,7 @@ func TestTreeIgnoresATipLineWithoutAName(t *testing.T) {
 		Output: "aaa main\nlinha-sem-nome\n\nbbb camada-1\nccc camada-2\nddd camada-3\neee solta",
 	}
 
-	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -195,7 +195,7 @@ func TestTreeNeverPointsABranchAtItself(t *testing.T) {
 	responses := stacked()
 	responses["rev-list solta ^main"] = gittest.Response{Output: "eee\neee"}
 
-	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -209,7 +209,7 @@ func TestTreeNeverPointsABranchAtTheBase(t *testing.T) {
 	responses := stacked()
 	responses["rev-list solta ^main"] = gittest.Response{Output: "eee\naaa"}
 
-	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)
@@ -223,7 +223,7 @@ func TestTreeIgnoresBlankLinesInTheHistory(t *testing.T) {
 	responses := stacked()
 	responses["rev-list camada-2 ^main"] = gittest.Response{Output: "ccc\n\n   \nbbb"}
 
-	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"})
+	layers, err := NewRepo(gittest.NewRunner(responses)).Tree(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)

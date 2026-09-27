@@ -52,6 +52,7 @@ func TestResolveBase(t *testing.T) {
 	tests := []struct {
 		name       string
 		requested  string
+		configured string
 		responses  map[string]gittest.Response
 		wantName   string
 		wantSource BaseSource
@@ -69,6 +70,37 @@ func TestResolveBase(t *testing.T) {
 			requested: "fantasma",
 			responses: map[string]gittest.Response{exists("fantasma"): {Err: errors.New("")}},
 			wantError: `a branch base "fantasma" não existe`,
+		},
+		{
+			name:       "informada via configuração",
+			configured: "develop",
+			responses:  map[string]gittest.Response{exists("develop"): {Output: "abc123"}},
+			wantName:   "develop",
+			wantSource: BaseFromConfig,
+		},
+		{
+			name:       "flag vence a configuração",
+			requested:  "flag-wins",
+			configured: "develop",
+			responses:  map[string]gittest.Response{exists("flag-wins"): {Output: "abc123"}},
+			wantName:   "flag-wins",
+			wantSource: BaseFromFlag,
+		},
+		{
+			name:       "configuração vence a detecção via origin/HEAD",
+			configured: "develop",
+			responses: map[string]gittest.Response{
+				exists("develop"): {Output: "abc123"},
+				"symbolic-ref --short refs/remotes/origin/HEAD": {Output: "origin/main"},
+			},
+			wantName:   "develop",
+			wantSource: BaseFromConfig,
+		},
+		{
+			name:       "configurada mas inexistente",
+			configured: "fantasma",
+			responses:  map[string]gittest.Response{exists("fantasma"): {Err: errors.New("")}},
+			wantError:  `a branch base "fantasma" não existe`,
 		},
 		{
 			name: "detectada via origin/HEAD",
@@ -122,7 +154,7 @@ func TestResolveBase(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			base, err := NewRepo(gittest.NewRunner(test.responses)).ResolveBase(t.Context(), test.requested)
+			base, err := NewRepo(gittest.NewRunner(test.responses)).ResolveBase(t.Context(), test.requested, test.configured)
 
 			if test.wantError != "" {
 				if err == nil {
@@ -150,13 +182,27 @@ func TestResolveBase(t *testing.T) {
 func TestResolveBaseSkipsDetectionWhenFlagSet(t *testing.T) {
 	runner := gittest.NewRunner(map[string]gittest.Response{exists("develop"): {Output: "abc123"}})
 
-	if _, err := NewRepo(runner).ResolveBase(t.Context(), "develop"); err != nil {
+	if _, err := NewRepo(runner).ResolveBase(t.Context(), "develop", ""); err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
 
 	for _, call := range runner.Calls {
 		if strings.Contains(call, "symbolic-ref") {
 			t.Fatalf("a flag deveria curto-circuitar a detecção, mas rodou %q", call)
+		}
+	}
+}
+
+func TestResolveBaseSkipsDetectionWhenConfiguredSet(t *testing.T) {
+	runner := gittest.NewRunner(map[string]gittest.Response{exists("develop"): {Output: "abc123"}})
+
+	if _, err := NewRepo(runner).ResolveBase(t.Context(), "", "develop"); err != nil {
+		t.Fatalf("não esperava erro, veio %v", err)
+	}
+
+	for _, call := range runner.Calls {
+		if strings.Contains(call, "symbolic-ref") {
+			t.Fatalf("a base configurada deveria curto-circuitar a detecção, mas rodou %q", call)
 		}
 	}
 }
@@ -263,7 +309,7 @@ func TestMerged(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			repo := NewRepo(gittest.NewRunner(mergedResponses(test.base, test.refs, test.current)))
 
-			merged, err := repo.Merged(t.Context(), Base{Name: test.base})
+			merged, err := repo.Merged(t.Context(), Base{Name: test.base}, nil)
 			if err != nil {
 				t.Fatalf("não esperava erro, veio %v", err)
 			}
@@ -285,7 +331,7 @@ func TestMergedPropagatesGitError(t *testing.T) {
 		"for-each-ref refs/heads/ --merged main --format=%(refname:short)": {Err: errors.New("malformed object name main")},
 	}
 
-	_, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"})
+	_, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"}, nil)
 	if err == nil {
 		t.Fatal("esperava erro, veio nil")
 	}
@@ -350,7 +396,7 @@ func TestMergedFindsEquivalentBranches(t *testing.T) {
 				map[string]gittest.Response{"cherry main solta": test.commits},
 			)
 
-			merged, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"})
+			merged, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"}, nil)
 			if err != nil {
 				t.Fatalf("não esperava erro, veio %v", err)
 			}
@@ -408,7 +454,7 @@ func TestMergedDegradesWhenTheProbeCannotRun(t *testing.T) {
 				test.breaking,
 			))
 
-			merged, err := NewRepo(runner).Merged(t.Context(), Base{Name: "main"})
+			merged, err := NewRepo(runner).Merged(t.Context(), Base{Name: "main"}, nil)
 			if err != nil {
 				t.Fatalf("sonda quebrada não pode derrubar o comando, veio %v", err)
 			}
@@ -423,7 +469,7 @@ func TestMergedPropagatesListingError(t *testing.T) {
 	responses := listings("main", "main", "", "main")
 	responses["for-each-ref refs/heads/ --format=%(refname:short)"] = gittest.Response{Err: errors.New("malformed object name")}
 
-	_, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"})
+	_, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"}, nil)
 	if err == nil {
 		t.Fatal("esperava erro, veio nil")
 	}
@@ -438,7 +484,7 @@ func TestMergedProbeFailureIsNotFatal(t *testing.T) {
 		map[string]gittest.Response{"merge-base main solta": {Err: errors.New("fatal: no merge base")}},
 	)
 
-	merged, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"})
+	merged, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"}, nil)
 	if err != nil {
 		t.Fatalf("branch sem merge-base não pode derrubar o comando, veio %v", err)
 	}
@@ -450,7 +496,7 @@ func TestMergedProbeFailureIsNotFatal(t *testing.T) {
 func TestMergedDoesNotProbeProtectedBranches(t *testing.T) {
 	runner := gittest.NewRunner(listings("develop", "develop", "develop\nmain\nmaster\natual", "atual"))
 
-	merged, err := NewRepo(runner).Merged(t.Context(), Base{Name: "develop"})
+	merged, err := NewRepo(runner).Merged(t.Context(), Base{Name: "develop"}, nil)
 	if err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
@@ -471,7 +517,7 @@ func TestMergedNeverReadsRemoteRefs(t *testing.T) {
 		probe("main", "solta", gittest.Response{Output: "- probe-solta"}),
 	))
 
-	if _, err := NewRepo(runner).Merged(t.Context(), Base{Name: "main"}); err != nil {
+	if _, err := NewRepo(runner).Merged(t.Context(), Base{Name: "main"}, nil); err != nil {
 		t.Fatalf("não esperava erro, veio %v", err)
 	}
 
@@ -599,7 +645,7 @@ func TestMergedListsTheAncestorsBeforeTheEquivalents(t *testing.T) {
 		probe("main", "aa-squashada", gittest.Response{Output: "- probe-aa-squashada"}),
 	)
 
-	merged, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"})
+	merged, err := NewRepo(gittest.NewRunner(responses)).Merged(t.Context(), Base{Name: "main"}, nil)
 
 	if err != nil {
 		t.Fatalf("nao esperava erro, veio %v", err)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/LHPalma/gitarias/internal/branch"
+	"github.com/LHPalma/gitarias/internal/config"
 	"github.com/LHPalma/gitarias/internal/format"
 	"github.com/LHPalma/gitarias/internal/git"
 	"github.com/LHPalma/gitarias/internal/ui"
@@ -36,7 +37,7 @@ func newBranchesCommand(runner git.Runner) *cobra.Command {
 		Short: "Lista branches locais já mergeadas na branch base",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, args []string) error {
-			return runBranches(command, branch.NewRepo(runner), worktree.NewRepo(runner), undo.NewJournal(runner), options)
+			return runBranches(command, branch.NewRepo(runner), worktree.NewRepo(runner), undo.NewJournal(runner), runner, options)
 		},
 	}
 
@@ -50,7 +51,7 @@ func newBranchesCommand(runner git.Runner) *cobra.Command {
 	return command
 }
 
-func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.Repo, journal *undo.Journal, options branchesOptions) error {
+func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.Repo, journal *undo.Journal, runner git.Runner, options branchesOptions) error {
 	chosen, err := options.resolve(command)
 	if err != nil {
 		return err
@@ -75,16 +76,24 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 		return err
 	}
 
-	base, err := repo.ResolveBase(ctx, options.base)
+	// O arquivo de configuração só é lido depois do Ensure: fora de um
+	// repositório, o erro tem de ser o do Ensure, não o de uma tentativa de
+	// achar a raiz que não existe.
+	cfg, err := config.Load(ctx, runner)
+	if err != nil {
+		return err
+	}
+
+	base, err := repo.ResolveBase(ctx, options.base, cfg.Branches.Base)
 	if err != nil {
 		return err
 	}
 
 	if options.tree {
-		return runBranchesTree(ctx, command, repo, chosen, options, base)
+		return runBranchesTree(ctx, command, repo, chosen, options, base, cfg.Branches.Protected)
 	}
 
-	merged, err := repo.Merged(ctx, base)
+	merged, err := repo.Merged(ctx, base, cfg.Branches.Protected)
 	if err != nil {
 		return err
 	}
@@ -145,8 +154,8 @@ func runBranches(command *cobra.Command, repo *branch.Repo, worktrees *worktree.
 	return report(output, errorOutput, results)
 }
 
-func runBranchesTree(ctx context.Context, command *cobra.Command, repo *branch.Repo, chosen rendering, options branchesOptions, base branch.Base) error {
-	layers, err := repo.Tree(ctx, base)
+func runBranchesTree(ctx context.Context, command *cobra.Command, repo *branch.Repo, chosen rendering, options branchesOptions, base branch.Base, configuredProtected []string) error {
+	layers, err := repo.Tree(ctx, base, configuredProtected)
 	if err != nil {
 		return err
 	}
