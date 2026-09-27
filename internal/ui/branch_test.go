@@ -33,6 +33,7 @@ func TestDescribeSource(t *testing.T) {
 		want   string
 	}{
 		{name: "via flag", source: branch.BaseFromFlag, want: "informada via --base"},
+		{name: "via configuração", source: branch.BaseFromConfig, want: "informada via configuração"},
 		{name: "via origin HEAD", source: branch.BaseFromOriginHead, want: "detectada via origin/HEAD"},
 		{name: "encontrada no repositorio", source: branch.BaseFromLocal, want: "encontrada localmente"},
 	}

@@ -17,6 +17,8 @@ func DescribeSource(source branch.BaseSource) string {
 	switch source {
 	case branch.BaseFromFlag:
 		return "informada via --base"
+	case branch.BaseFromConfig:
+		return "informada via configuração"
 	case branch.BaseFromOriginHead:
 		return "detectada via origin/HEAD"
 	default:

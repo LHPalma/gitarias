@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/LHPalma/gitarias/internal/git"
@@ -23,12 +24,19 @@ func (repo *Repo) Ensure(ctx context.Context) error {
 	return git.EnsureRepo(ctx, repo.runner)
 }
 
-func (repo *Repo) ResolveBase(ctx context.Context, requested string) (Base, error) {
+func (repo *Repo) ResolveBase(ctx context.Context, requested string, configured string) (Base, error) {
 	if requested != "" {
 		if !repo.localExists(ctx, requested) {
 			return Base{}, fmt.Errorf("a branch base %q não existe neste repositório", requested)
 		}
 		return Base{Name: requested, Source: BaseFromFlag}, nil
+	}
+
+	if configured != "" {
+		if !repo.localExists(ctx, configured) {
+			return Base{}, fmt.Errorf("a branch base %q não existe neste repositório", configured)
+		}
+		return Base{Name: configured, Source: BaseFromConfig}, nil
 	}
 
 	if originHead, err := repo.runner.Run(ctx, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
@@ -52,10 +60,10 @@ func (repo *Repo) localExists(ctx context.Context, name string) bool {
 	return err == nil
 }
 
-func (repo *Repo) Merged(ctx context.Context, base Base) ([]Branch, error) {
-	protected := repo.protected(ctx, base)
+func (repo *Repo) Merged(ctx context.Context, base Base, configuredProtected []string) ([]Branch, error) {
+	protected, patterns := repo.protected(ctx, base, configuredProtected)
 
-	all, kinds, err := repo.classify(ctx, base, protected)
+	all, kinds, err := repo.classify(ctx, base, protected, patterns)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +82,7 @@ func (repo *Repo) Merged(ctx context.Context, base Base) ([]Branch, error) {
 	return merged, nil
 }
 
-func (repo *Repo) classify(ctx context.Context, base Base, protected map[string]bool) ([]string, map[string]MergeKind, error) {
+func (repo *Repo) classify(ctx context.Context, base Base, protected map[string]bool, patterns []string) ([]string, map[string]MergeKind, error) {
 	ancestors, err := repo.refs(ctx, "--merged", base.Name)
 	if err != nil {
 		return nil, nil, err
@@ -89,6 +97,8 @@ func (repo *Repo) classify(ctx context.Context, base Base, protected map[string]
 	if err != nil {
 		return nil, nil, err
 	}
+
+	expandProtectedPatterns(protected, patterns, all)
 
 	for _, name := range all {
 		if _, contained := kinds[name]; contained || protected[name] {
@@ -119,7 +129,12 @@ func (repo *Repo) refs(ctx context.Context, filters ...string) ([]string, error)
 	return names, nil
 }
 
-func (repo *Repo) protected(ctx context.Context, base Base) map[string]bool {
+// protected monta o conjunto de branches nunca oferecidas para deleção. main,
+// master, a base e a branch atual são protegidas incondicionalmente — RN-03
+// da SRS — branches — e o que vem de configuração só acrescenta: um item sem
+// "*" entra direto no mapa, um item com "*" vira padrão e é resolvido contra
+// a lista de branches só quando ela existir, em expandProtectedPatterns.
+func (repo *Repo) protected(ctx context.Context, base Base, configured []string) (map[string]bool, []string) {
 	protected := map[string]bool{
 		base.Name: true,
 		"main":    true,
@@ -129,7 +144,38 @@ func (repo *Repo) protected(ctx context.Context, base Base) map[string]bool {
 		protected[currentBranch] = true
 	}
 
-	return protected
+	var patterns []string
+	for _, entry := range configured {
+		if strings.Contains(entry, "*") {
+			patterns = append(patterns, entry)
+			continue
+		}
+		protected[entry] = true
+	}
+
+	return protected, patterns
+}
+
+// expandProtectedPatterns casa cada padrão configurado contra os nomes de
+// branch de verdade, e acrescenta ao mapa o que casar. Precisa da lista
+// completa de branches, então roda depois do refs(ctx) que a produz — nunca
+// antes, quando o universo de nomes ainda não é conhecido.
+func expandProtectedPatterns(protected map[string]bool, patterns []string, names []string) {
+	if len(patterns) == 0 {
+		return
+	}
+
+	for _, name := range names {
+		if protected[name] {
+			continue
+		}
+		for _, pattern := range patterns {
+			if matched, _ := path.Match(pattern, name); matched {
+				protected[name] = true
+				break
+			}
+		}
+	}
 }
 
 func (repo *Repo) equivalence(ctx context.Context, base Base, name string) (MergeKind, bool) {
@@ -242,10 +288,10 @@ func (repo *Repo) restore(ctx context.Context, target Restoration) error {
 	return err
 }
 
-func (repo *Repo) Tree(ctx context.Context, base Base) ([]Layer, error) {
-	protected := repo.protected(ctx, base)
+func (repo *Repo) Tree(ctx context.Context, base Base, configuredProtected []string) ([]Layer, error) {
+	protected, patterns := repo.protected(ctx, base, configuredProtected)
 
-	all, kinds, err := repo.classify(ctx, base, protected)
+	all, kinds, err := repo.classify(ctx, base, protected, patterns)
 	if err != nil {
 		return nil, err
 	}

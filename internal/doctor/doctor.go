@@ -240,7 +240,9 @@ func (doctor *Doctor) base(ctx context.Context, repository Check) Check {
 		return Check{Name: "base", State: Skipped, Detail: "depende de estar num repositório"}
 	}
 
-	resolved, err := branch.NewRepo(doctor.runner).ResolveBase(ctx, "")
+	// "" no lugar da base configurada: o doctor não lê o .gtr.yaml nesta
+	// entrega, por decisão registrada em docs/srs/config.md.
+	resolved, err := branch.NewRepo(doctor.runner).ResolveBase(ctx, "", "")
 	if err != nil {
 		return Check{
 			Name:   "base",

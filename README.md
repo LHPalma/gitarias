@@ -12,7 +12,7 @@ no `--help`. Nem os três primeiros pedem token: quem fala com o GitHub é o
 
 ## Instalação
 
-Requer Go 1.24.7 ou superior para compilar, e `git` no `PATH` para rodar.
+Requer Go 1.26.0 ou superior para compilar, e `git` no `PATH` para rodar.
 
 ```bash
 git clone https://github.com/LHPalma/gitarias
@@ -129,8 +129,9 @@ working tree, perder alterações não commitadas, ou só mover o `HEAD` —, e
 **Como a base é escolhida**, parando no primeiro que funcionar:
 
 1. o valor de `--base`, se informado;
-2. a branch apontada por `origin/HEAD`, se existir;
-3. `main` ou `master` local, a primeira que existir.
+2. `branches.base` do `.gtr.yaml`, se configurado ([`.gtr.yaml` e `gtr config`](#gtryaml-e-gtr-config));
+3. a branch apontada por `origin/HEAD`, se existir;
+4. `main` ou `master` local, a primeira que existir.
 
 Se nenhum funcionar, o comando falha pedindo `--base`. A saída sempre informa
 qual caminho foi usado.
@@ -1631,6 +1632,76 @@ que está no disco, nada é escrito — nem os que aplicariam sozinhos:
 $ gtr diff apply mudancas.patch
 erro: error: b.txt: patch does not apply
 ```
+
+### `.gtr.yaml` e `gtr config`
+
+Arquivo opcional, em duas camadas — nenhuma obrigatória, e a ausência das
+duas é estado válido e suportado:
+
+```text
+~/.config/gtr/config.yaml     preferências pessoais, todos os repositórios
+<raiz do repo>/.gtr.yaml      convenção do time, se for commitado
+```
+
+Merge é **por chave**, não por arquivo: um repo que só define `branches.base`
+não apaga um `branches.protected` que exista só no arquivo pessoal.
+Precedência **repo > pessoal > padrão embutido**. Hoje só duas chaves são
+lidas — a pressão que motivou o arquivo, `main`/`master` cravadas no
+`branches`:
+
+```yaml
+branches:
+  protected: [develop, "release/*"]
+  base: develop
+```
+
+`base` entra na mesma cadeia de detecção do `--base`, mas **depois** da
+flag e **antes** de `origin/HEAD` — quem configura sabe o que quer melhor do
+que a detecção automática. `protected` só **acrescenta** nomes e padrões
+(`release/*` casa qualquer coisa que comece com `release/`) à proteção de
+`main`, `master`, a base e a branch atual, que continuam protegidas mesmo
+sem o arquivo dizer isso.
+
+`gtr config` mostra o efetivo e de onde cada valor veio, nos quatro
+formatos de sempre:
+
+```console
+$ gtr config
+CHAVE               VALOR  ORIGEM
+branches.protected         padrão embutido
+branches.base              padrão embutido
+```
+
+```console
+$ cat .gtr.yaml
+branches:
+  protected: [develop, "release/*"]
+  base: develop
+
+$ gtr config
+CHAVE               VALOR               ORIGEM
+branches.protected  develop, release/*  arquivo do repo
+branches.base       develop             arquivo do repo
+```
+
+**Só inglês nesta versão.** `lang:` diferente de `en` (ou ausente, que
+significa `en`) é erro explícito, não é ignorado nem traduzido:
+
+```console
+$ cat .gtr.yaml
+lang: pt-BR
+branches:
+  base: develop
+
+$ gtr config
+erro: arquivo de configuração /tmp/meu-repo/.gtr.yaml: lang "pt-BR" não suportada nesta versão; só en está implementado
+```
+
+`gtr config` só lê — não há `--write` nem `gtr config init`. Detalhe
+completo, inclusive o que fica de fora desta entrega (`gtr config
+translate`, vocabulário multilíngue, `changelog.types`/`ignored.separator`
+lendo o arquivo), na [SRS — .gtr.yaml e gtr config](docs/srs/config.md) e na
+[ADR-004](docs/adr/004-configuracao-e-formatos.md).
 
 ## O que a ferramenta nunca faz
 

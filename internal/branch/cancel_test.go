@@ -19,10 +19,10 @@ func TestBranchOperationsCarryTheCancellation(t *testing.T) {
 	if err := repo.Ensure(ctx); err == nil {
 		t.Error("Ensure tem de recusar o contexto cancelado")
 	}
-	if _, err := repo.ResolveBase(ctx, ""); err == nil {
+	if _, err := repo.ResolveBase(ctx, "", ""); err == nil {
 		t.Error("ResolveBase tem de recusar o contexto cancelado")
 	}
-	if _, err := repo.Merged(ctx, Base{Name: "main"}); err == nil {
+	if _, err := repo.Merged(ctx, Base{Name: "main"}, nil); err == nil {
 		t.Error("Merged tem de recusar o contexto cancelado")
 	}
 }
