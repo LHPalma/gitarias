@@ -1,7 +1,7 @@
 ---
 titulo: ADR-004 — Configuração opcional e formatos de saída
 data: 2026-08-04
-status: --format entregue • .gtr.yaml e gtr config propostos
+status: --format entregue • .gtr.yaml e gtr config v1 entregue (branches.protected/base) • translate fora
 escopo: .gtr.yaml, gtr config, flag --format compartilhada
 supersede: a formulação "nenhum arquivo de configuração", e o item --json que estava aberto
 ---
@@ -9,7 +9,7 @@ supersede: a formulação "nenhum arquivo de configuração", e o item --json qu
 # ADR-004 — Configuração opcional e formatos de saída
 
 - **Data:** 2026-08-04
-- **Status:** **`--format` entregue** e adotado por todos os comandos que produzem tabela. O **`.gtr.yaml`** e o **`gtr config`** seguem propostos, nada implementado
+- **Status:** **`--format` entregue** e adotado por todos os comandos que produzem tabela. **`.gtr.yaml` e `gtr config` entregues em v1** — leitura em duas camadas, merge por chave, e o primeiro consumidor real (`branches.protected`/`branches.base`). **`gtr config translate` e o vocabulário multilíngue seguem fora**, e nenhum outro comando lê o arquivo ainda. Detalhe em [SRS — .gtr.yaml e gtr config](../srs/config.md)
 - **Escopo:** `.gtr.yaml`, `gtr config`, flag `--format` compartilhada
 - **Supersede:** o requisito não-funcional na formulação "nenhum arquivo de configuração"
 
