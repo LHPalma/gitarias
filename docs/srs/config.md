@@ -11,7 +11,8 @@ pacotes:
   - internal/branch
   - internal/ui
 commits:
-  - pendente
+  - 67334bb
+  - d24c2ff
 fonte_externa: nenhuma
 ---
 
