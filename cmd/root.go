@@ -42,6 +42,7 @@ func NewRootCommand(runner Runner, commands exec.Runner, client web.Client, find
 	command.AddCommand(newOverdubSequenceStepCommand())
 	command.AddCommand(newProfileCommand(runner, commands))
 	command.AddCommand(newPullRequestCommand(runner, commands))
+	command.AddCommand(newRedateCommand(runner))
 	command.AddCommand(newRiffCommand(client))
 	command.AddCommand(newSetupCommand(runner, commands, finder))
 	command.AddCommand(newStatsCommand(runner))
