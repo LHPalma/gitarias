@@ -10,7 +10,7 @@ supersede: a leitura de que as regras de branches proíbem operação destrutiva
 
 - **Data:** 2026-08-07
 - **Status:** **adotada** — toda operação destrutiva entregue desde então cumpre as três cláusulas, e a única exceção, o [`gtr fire`](../srs/fire.md), declara por que é exceção
-- **Escopo:** transversal — `branches`, `worktrees`, `ignore`, `author`, `overdub`, `ai-trailers strip`, a feature de stash e qualquer escrita em ref remota
+- **Escopo:** transversal — `branches`, `worktrees`, `ignore`, `author`, `overdub`, `redate`, `ai-trailers strip`, a feature de stash e qualquer escrita em ref remota
 - **Supersede:** a leitura de que as regras do `branches` proíbem operação destrutiva
 
 ---
@@ -63,6 +63,7 @@ As três nunca se fundem num passo só. É a mesma disciplina que a **[ADR-002](
 | `branches --clean --force` | Patch-id: conteúdo provado redundante | `--force`, além do `--clean` | Só quem rodou |
 | [`author`](../srs/author.md) e [`overdub`](../srs/overdub.md) | O `HEAD` anterior impresso antes da pergunta, para o `reset --hard` | Confirmação obrigatória, sem `--force` | Só quem rodou; a prévia diz quantos commits e quais autores |
 | [`ai-trailers strip`](../srs/ai-trailers-strip.md) | Mesma linha de recuperação, sobre o mesmo mecanismo | Confirmação obrigatória | Só quem rodou |
+| [`redate`](../srs/redate.md) | Mesma linha de recuperação; merge fora do período é recusado em vez de achatado | Confirmação obrigatória, sem `--force` | Só quem rodou; a prévia lista cada commit reescrito |
 | Largar o diff da árvore (feature de stash) | Cópia em `refs/stash` criada **e relida** antes de limpar | Flag própria + confirmação | Só quem rodou. **Atenção aos untracked:** `git diff` não os captura, então limpá-los sem tê-los salvo viola a cláusula 1 |
 | [`worktrees remove`](../srs/worktrees.md) | Listar os ignorados que seriam apagados | Flag própria + confirmação | Só quem rodou, mas atinge arquivo **não versionado**, que não tem recuperação nenhuma: a prova aqui é mostrar, não garantir |
 | Deletar ref remota | Conteúdo contido na base, mesma comparação do caminho local | Flag **própria**, que não se confunde com `--force` | Todos que derem pull. **Cada ref nomeada** na confirmação; nunca lote por padrão |
