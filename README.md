@@ -775,6 +775,84 @@ deixar rastro nenhum, nem no reflog, e não tem como recuperar:
 Há mudança não commitada em arquivo rastreado: será descartada sem deixar rastro nenhum, nem no reflog.
 ```
 
+### `gtr redate`
+
+Reescreve a data de commits — a de autoria e a de committer, juntas —, com
+confirmação. É o `GIT_COMMITTER_DATE=<data> git commit --amend --date=<data>
+--no-edit` de sempre, com prévia, e que também alcança um período inteiro.
+
+```
+$ gtr redate --date 2026-10-03T14:00:00
+Vai trocar a data de 1 commit para 2026-10-03T14:00:00:
+  208d892  2026-10-04T16:12:09  docs: fill in the real commits for the config SRS
+Recuperável com: git reset --hard 208d892
+Confirma? [y/N] y
+Pronto.
+```
+
+| Flag | Padrão | Efeito |
+|---|---|---|
+| `--date <data>` | vazio | A data a atribuir, `AAAA-MM-DDTHH:MM:SS`, no fuso local (obrigatória) |
+| `--since <data>` | vazio | Início do período, `AAAA-MM-DD`; sem ela, sem limite inferior |
+| `--until <data>` | hoje | Fim do período, `AAAA-MM-DD`; sem ela, vai até hoje |
+
+**Sem `--since` nem `--until`, mexe só no commit mais recente** — um `git
+commit --amend` só, e só o SHA do topo muda. **Com qualquer um dos dois**,
+reescreve o período inteiro com uma rebase, e todos os commits dele recebem
+**a mesma data**. `--since` sozinha vai até o `HEAD`; `--until` sozinha não
+tem piso:
+
+```
+$ gtr redate --date 2026-10-03T14:00:00 --since 2026-09-04
+Vai trocar a data de 5 commits para 2026-10-03T14:00:00:
+  f60ba23  2026-09-07T10:00:00  c5
+  146865d  2026-09-06T10:00:00  c4
+  a13a485  2026-09-05T10:00:00  merge1
+  9b2f445  2026-09-04T10:00:00  c3
+  df380a4  2026-09-03T10:00:00  f1
+Recuperável com: git reset --hard f60ba23
+Confirma? [y/N] y
+Pronto.
+```
+
+Repare no último: `f1` é de `2026-09-03`, antes do `--since`. A prévia lista o
+que a rebase de fato reescreve, e a rebase leva junto qualquer commit do branch
+que foi mergeado dentro do período — o período escolhe onde a reescrita
+começa e termina, não commit a commit.
+
+**É uma reescrita de história de verdade, e cai sob a ADR-008**: a linha
+`Recuperável com: git reset --hard <sha>` sai antes da pergunta, `[y/N]` com
+padrão negativo, sem `--force`. Todo commit do período ganha hash novo, e o
+que vem depois dele também; todo clone e PR que já tinham os commits antigos
+quebram.
+
+**Merges do período são preservados** (`--rebase-merges`). Medido contra o git
+de verdade: sem a flag, a rebase descarta o commit de merge e o histórico vira
+uma linha reta. **Merge depois do período é recusado**, com `--until` fechando
+antes do `HEAD`: reencaixar a cauda achataria o merge, e com
+`--rebase-merges` duplicaria o histórico de qualquer branch que nasceu dentro
+do período. Feche o período no `HEAD` (sem `--until`) para reescrever uma
+história com merges.
+
+**A cauda preservada perde só a data de committer.** Depois de `--until`, os
+commits mantêm árvore, mensagem e data de autoria, mas a rebase carimba neles
+a hora de agora como committer — e o hash muda, porque o do pai entra no
+cálculo.
+
+**A data viaja em duas formas, as duas seguras.** A de committer vai pelo
+ambiente do processo (`GIT_COMMITTER_DATE`); a de autoria vai em `--date`,
+dentro da string do `--exec`, que roda por um shell. Por isso o `--date` é
+lido e reescrito no próprio formato antes de chegar lá — só dígitos, `-`, `:`
+e `T` passam, e `--date '2026-10-03T14:00:00; rm -rf /'` é recusado antes de
+qualquer chamada ao git.
+
+**O commit raiz entra no período** (`rebase --root`), diferente do `author`,
+que não o alcança.
+
+O apelido é `reissue`: relançar um disco antigo com data de lançamento nova,
+sem regravar nada. Fica fora da ajuda da raiz, para que o nome anunciado seja o
+óbvio.
+
 ### `gtr weight`
 
 Mostra o que mais pesa no histórico. Apelido: `gtr roadie`.
